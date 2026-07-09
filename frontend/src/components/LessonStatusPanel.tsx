@@ -16,7 +16,7 @@ export function LessonStatusPanel({ state }: Props) {
   return (
     <div className="flex flex-col gap-3 p-4">
       <div>
-        <h2 className="font-display text-title-lg text-ink">{state.topic}</h2>
+        <h2 className="break-words font-display text-title-lg text-ink">{state.topic}</h2>
         {state.paused && (
           <span className="mt-1.5 inline-block rounded-pill bg-amber/15 px-2.5 py-0.5 text-caption text-amber">
             Paused — answering question
@@ -41,7 +41,7 @@ export function LessonStatusPanel({ state }: Props) {
               }
             >
               <span className="shrink-0">{done ? '✓' : active ? '▶' : '○'}</span>
-              <span>{step}</span>
+              <span className="break-words">{step}</span>
             </li>
           );
         })}

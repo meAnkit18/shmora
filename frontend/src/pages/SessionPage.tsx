@@ -297,7 +297,7 @@ export function SessionPage() {
   }, []);
 
   return (
-    <div className="flex h-full bg-canvas text-body">
+    <div className="flex h-full w-full overflow-x-hidden bg-canvas text-body">
       {sidebarOpen && (
         <Sidebar
           lessons={lessons}
@@ -309,12 +309,12 @@ export function SessionPage() {
         />
       )}
 
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         {!sidebarOpen && (
           <button
             onClick={() => setSidebarOpen(true)}
             title="Open sidebar"
-            className="absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white text-fg-muted shadow-sm transition-colors hover:text-ink"
+            className="absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white text-fg-muted transition-colors hover:border-ink/20 hover:text-ink"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -343,7 +343,7 @@ export function SessionPage() {
           />
         ) : (
           <>
-            <header className={'flex h-[60px] shrink-0 items-center gap-3 border-b border-hairline bg-canvas/80 px-5 backdrop-blur-sm ' + (sidebarOpen ? '' : 'pl-14')}>
+            <header className={'flex h-[60px] min-w-0 shrink-0 items-center gap-3 border-b border-hairline bg-canvas px-5 ' + (sidebarOpen ? '' : 'pl-14')}>
               <h1 className="truncate font-display text-title-lg text-ink">{state.topic}</h1>
               <span
                 className={'h-2 w-2 shrink-0 rounded-pill ' + (connected ? 'bg-success' : 'bg-fg-soft/50')}
@@ -355,11 +355,11 @@ export function SessionPage() {
               )}
             </header>
 
-            <main className="flex min-h-0 flex-1">
-              <section className="min-h-0 flex-1 bg-white">
+            <main className="flex min-h-0 min-w-0 flex-1">
+              <section className="min-h-0 min-w-0 flex-1 bg-white">
                 <TeachingCanvas ref={canvasRef} />
               </section>
-              <aside className="flex w-80 shrink-0 flex-col border-l border-hairline bg-surface-soft">
+              <aside className="flex w-80 min-w-0 shrink-0 flex-col border-l border-hairline bg-surface-soft">
                 <div className="border-b border-hairline">
                   <LessonStatusPanel state={state} />
                 </div>
@@ -411,7 +411,7 @@ function EmptyState({ topic, setTopic, onStart, starting, connected, sidebarOpen
           </p>
         </div>
 
-        <div className="flex flex-col gap-2.5 rounded-2xl border border-hairline bg-white p-2.5 shadow-[0_8px_30px_rgba(20,20,19,0.07)] transition-all focus-within:border-brand/60 focus-within:shadow-[0_12px_40px_rgba(255,122,0,0.14)] sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-2.5 rounded-xl border border-hairline bg-white p-2.5 transition-colors focus-within:border-brand/50 sm:flex-row sm:items-center">
           <input
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
@@ -423,7 +423,7 @@ function EmptyState({ topic, setTopic, onStart, starting, connected, sidebarOpen
           <button
             onClick={onStart}
             disabled={starting || !connected || !topic.trim()}
-            className="group inline-flex h-12 shrink-0 items-center justify-center gap-1.5 rounded-[14px] bg-brand px-6 text-button text-white shadow-[0_4px_16px_rgba(255,122,0,0.3)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-brand-active disabled:translate-y-0 disabled:bg-brand-disabled disabled:shadow-none"
+            className="group inline-flex h-12 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand px-6 text-button text-white transition-colors duration-150 hover:bg-brand-active disabled:bg-brand-disabled"
           >
             {starting ? 'Starting…' : 'Start Learning'}
             <span className="transition-transform duration-300 group-hover:translate-x-0.5">→</span>

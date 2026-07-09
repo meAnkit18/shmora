@@ -55,7 +55,7 @@ export function Sidebar({ lessons, activeId, onNew, onSelect, onDelete, onCollap
       <div className="px-3 pb-2">
         <button
           onClick={onNew}
-          className="flex w-full items-center gap-2 rounded-lg border border-hairline bg-white px-3 py-2.5 text-title-sm text-ink shadow-[0_1px_2px_rgba(20,20,19,0.04)] transition-all hover:border-brand/40 hover:text-brand"
+          className="flex w-full items-center gap-2 rounded-lg border border-hairline bg-white px-3 py-2.5 text-title-sm text-ink transition-colors hover:border-brand/40 hover:text-brand"
         >
           <PlusIcon />
           New lesson

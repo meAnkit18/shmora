@@ -25,7 +25,7 @@ export function TranscriptPanel({ messages }: Props) {
         >
           <span
             className={
-              'inline-block max-w-[85%] rounded-lg px-3 py-2 text-body-sm ' +
+              'inline-block max-w-[85%] break-words rounded-lg px-3 py-2 text-body-sm ' +
               (m.role === 'user'
                 ? 'bg-brand text-white'
                 : 'bg-surface-card text-body')

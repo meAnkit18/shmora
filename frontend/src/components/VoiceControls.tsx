@@ -92,7 +92,7 @@ export function VoiceControls({
 
   return (
     <div className="border-t border-hairline bg-canvas px-4 py-4">
-      <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-hairline bg-white px-2.5 py-2 shadow-[0_4px_24px_rgba(20,20,19,0.06)] transition-all focus-within:border-brand/50 focus-within:shadow-[0_6px_28px_rgba(255,122,0,0.12)]">
+      <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-xl border border-hairline bg-white px-2.5 py-2 transition-colors focus-within:border-brand/50">
         {/* Mic mute / unmute */}
         <button
           onClick={onToggleMic}
@@ -108,7 +108,7 @@ export function VoiceControls({
             'flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 ' +
             (muted
               ? 'bg-surface-soft text-fg-muted hover:bg-surface-strong'
-              : 'bg-brand text-white shadow-[0_2px_10px_rgba(255,122,0,0.35)] hover:bg-brand-active')
+              : 'bg-brand text-white hover:bg-brand-active')
           }
         >
           {muted ? <IconMicOff /> : <IconMicOn />}
@@ -153,7 +153,7 @@ export function VoiceControls({
           onClick={submit}
           disabled={!text.trim()}
           title="Ask"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_2px_10px_rgba(255,122,0,0.35)] transition-colors hover:bg-brand-active disabled:bg-brand-disabled disabled:text-white/70 disabled:shadow-none"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-white transition-colors hover:bg-brand-active disabled:bg-brand-disabled disabled:text-white/70"
         >
           <IconSend />
         </button>
