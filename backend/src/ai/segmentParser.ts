@@ -50,6 +50,27 @@ function validateIntent(raw: unknown): VisualIntent | null {
     case 'update':
       if (!isStr(c.target) || typeof c.text !== 'string') return null;
       return { kind: 'update', target: c.target, text: c.text };
+    // ---- teacher gestures (added) ----
+    case 'circle':
+      if (!isStr(c.target)) return null;
+      return { kind: 'circle', target: c.target, ...(isStr(c.label) ? { label: c.label } : {}) };
+    case 'underline':
+      return isStr(c.target) ? { kind: 'underline', target: c.target } : null;
+    case 'strike':
+      return isStr(c.target) ? { kind: 'strike', target: c.target } : null;
+    case 'mark':
+      if (!isStr(c.target) || (c.symbol !== 'check' && c.symbol !== 'cross')) return null;
+      return { kind: 'mark', target: c.target, symbol: c.symbol };
+    case 'connect':
+      if (!isStr(c.from) || !isStr(c.to)) return null;
+      return {
+        kind: 'connect',
+        from: c.from,
+        to: c.to,
+        ...(isStr(c.label) ? { label: c.label } : {}),
+      };
+    case 'erase':
+      return isStr(c.target) ? { kind: 'erase', target: c.target } : null;
     default:
       return null;
   }

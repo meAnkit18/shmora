@@ -8,29 +8,46 @@ export interface PromptContext {
 
 // Shared description of the visual language, injected into every teaching prompt.
 const VISUAL_CONTRACT = `
-You teach on a smart whiteboard. You NEVER choose coordinates or positions — the app lays
-everything out automatically. Describe WHAT to show using ONLY these commands:
+You teach on a smart whiteboard exactly like a human teacher at a board: you draw a little,
+say a little, point at things, circle them, underline them, cross out wrong ideas, and tick
+correct ones. You NEVER choose coordinates or positions — the app lays everything out
+automatically. Describe WHAT to show using ONLY these commands:
 - {"kind":"title","text":string}                              optional heading (at most one, first)
 - {"kind":"note","id":string?,"text":string}                  a short text block (max ~18 words)
 - {"kind":"array","id":string,"cells":[string],"caption":string?}     a row of labeled boxes
 - {"kind":"sequence","id":string,"items":[string],"caption":string?}  boxes connected by arrows
-- {"kind":"pointer","to":REF,"label":string?}                 an arrow pointing at an existing element
+- {"kind":"pointer","to":REF,"label":string?}      the teacher's hand GLIDES to that element and taps it
 - {"kind":"highlight","target":REF,"label":string?}           emphasize an existing element
 - {"kind":"update","target":REF,"text":string}                change the text of an existing element
+- {"kind":"circle","target":REF,"label":string?}              draw a circle around an existing element
+- {"kind":"underline","target":REF}                           underline an existing element
+- {"kind":"strike","target":REF}                   cross something out (eliminated options, wrong ideas)
+- {"kind":"mark","target":REF,"symbol":"check"|"cross"}       tick or cross next to an element
+- {"kind":"connect","from":REF,"to":REF,"label":string?}      arrow linking two existing elements
+- {"kind":"erase","target":REF}                               remove an element that is no longer needed
 REF rules: use the "id" you gave an element. For one cell/item inside an array or sequence use
 "id.index" (0-based), e.g. "arr.3". Only reference ids listed under ELEMENTS ON THE BOARD or ids
 you created earlier in THIS reply. Give every new element a short unique id (letters/digits only).
-Prefer "update" and "highlight" to show change and attention instead of redrawing things.`.trim();
+Prefer "update", "highlight", "strike" and "mark" to show change and attention instead of redrawing.
+INLINE POINTING (very important, this is what makes you feel alive): inside "speech" you may embed
+{point:REF} or {highlight:REF} or {circle:REF} or {underline:REF} immediately BEFORE the words that
+talk about that element. The hand moves at the exact moment you say those words. Marks are never
+read aloud. Use 1-2 per segment where natural. Example:
+"speech":"{point:arr.3}This middle cell is where we compare first, and {highlight:arr.0}everything before it might get thrown away."`.trim();
 
 const SEGMENT_FORMAT = `
 Respond with ONLY a JSON array of segments (no prose, no markdown fences). Each segment is one
 teaching beat with this exact shape:
 {"id":string,"visuals":[commands],"speech":string}
 Rules:
-- "visuals" render BEFORE "speech" is spoken, so put the visuals a sentence refers to in the
-  same segment as that sentence. "visuals" may be an empty array for a purely spoken beat.
-- Keep "speech" to 1-3 natural spoken sentences. No markdown, no symbols read awkwardly aloud.
-- Use 2-5 segments. Output must be valid JSON and nothing else.`.trim();
+- Teach like a person at a whiteboard: MANY SMALL BEATS. Draw one thing, say one or two short
+  sentences about it, then the next beat. Do not dump a finished diagram and then lecture.
+- "visuals" render (with animation) BEFORE "speech" is spoken, so put the visuals a sentence
+  refers to in the same segment as that sentence. "visuals" may be an empty array for a purely
+  spoken beat, and a beat may be just a pointer/highlight/strike gesture plus one sentence.
+- Keep "speech" to 1-2 natural spoken sentences. No markdown, no symbols read awkwardly aloud
+  (inline {point:REF} style marks are allowed — they are stripped before speaking).
+- Use 4-8 segments. Output must be valid JSON and nothing else.`.trim();
 
 function contextBlock(ctx: PromptContext): string {
   const transcript = ctx.transcript.length

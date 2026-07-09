@@ -12,6 +12,7 @@ import { SegmentPlayer } from '../controllers/segmentPlayer';
 import { tts } from '../controllers/ttsController';
 import { voice } from '../controllers/voiceController';
 import { loadLessons, saveLesson, deleteLesson, type LessonEntry } from '../lib/lessonHistory';
+import { parseSpeechMarks, stripSpeechMarks } from '../lib/speechMarks';
 
 const SUGGESTIONS = [
   'Binary search from scratch',
@@ -93,9 +94,20 @@ export function SessionPage() {
 
     const player = new SegmentPlayer({
       execute: (seg) => canvasRef.current?.execute(seg) ?? Promise.resolve(),
-      speak: (t) => tts.speak(t),
+      // Strip inline {point:ref} marks before speaking, and fire each gesture
+      // on the board at the exact word where its mark sat.
+      speak: (t) => {
+        const { clean, marks } = parseSpeechMarks(t);
+        let next = 0;
+        return tts.speak(clean, (charIndex) => {
+          while (next < marks.length && marks[next].at <= charIndex + 1) {
+            canvasRef.current?.gesture(marks[next].action, marks[next].ref);
+            next++;
+          }
+        });
+      },
       stopSpeaking: () => tts.stop(),
-      setSpokenText: (t) => voice.setSpokenText(t),
+      setSpokenText: (t) => voice.setSpokenText(stripSpeechMarks(t)),
       onIdle: maybeAdvance,
     });
     playerRef.current = player;

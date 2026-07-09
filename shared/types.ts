@@ -14,7 +14,14 @@ export type VisualIntent =
   | { kind: 'sequence'; id: string; items: string[]; caption?: string }
   | { kind: 'pointer'; to: ElementRef; label?: string }
   | { kind: 'highlight'; target: ElementRef; label?: string }
-  | { kind: 'update'; target: ElementRef; text: string };
+  | { kind: 'update'; target: ElementRef; text: string }
+  // ---- teacher gestures (added) ----
+  | { kind: 'circle'; target: ElementRef; label?: string }
+  | { kind: 'underline'; target: ElementRef }
+  | { kind: 'strike'; target: ElementRef }
+  | { kind: 'mark'; target: ElementRef; symbol: 'check' | 'cross' }
+  | { kind: 'connect'; from: ElementRef; to: ElementRef; label?: string }
+  | { kind: 'erase'; target: ElementRef };
 
 // ---- Turns: one generation of the teacher (a step, an answer, or the recap) ----
 export type TurnKind = 'teach' | 'answer' | 'closing';

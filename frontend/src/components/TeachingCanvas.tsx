@@ -2,13 +2,16 @@ import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import type { Segment, TurnInfo, TurnRecord } from '@shared/types';
+import type { GestureAction } from '../lib/speechMarks';
 import { BoardEngine, type ExcalidrawAPI } from '../canvas/layoutEngine';
 
 export interface CanvasHandle {
   /** Open a new frame for a turn (teach step / question / recap). */
   beginTurn: (turn: TurnInfo) => void;
-  /** Render a segment's visuals, then resolve once the browser has painted them. */
+  /** Render a segment's visuals progressively; resolve once the drawing finishes. */
   execute: (segment: Segment) => Promise<void>;
+  /** Fire a mid-speech gesture (from an inline {point:ref} mark). */
+  gesture: (action: GestureAction, ref: string) => void;
   /** Replay a whole session's visuals silently (resume after refresh). */
   hydrate: (log: TurnRecord[]) => Promise<void>;
   clear: () => void;
@@ -45,9 +48,13 @@ export const TeachingCanvas = forwardRef<CanvasHandle>((_props, ref) => {
     execute: async (segment: Segment) => {
       const engine = engineRef.current;
       if (!engine.ready) return;
-      engine.apply(segment.visuals);
-      engine.focusActiveFrame();
+      engine.focusActiveFrame(); // look at the board before drawing starts
+      await engine.applyAnimated(segment.visuals); // progressive drawing + pointer glides
+      engine.focusActiveFrame(); // re-fit: the frame may have grown
       await nextPaint();
+    },
+    gesture: (action: GestureAction, ref2: string) => {
+      engineRef.current.gesture(action, ref2);
     },
     hydrate: async (log: TurnRecord[]) => {
       const engine = engineRef.current;
@@ -56,7 +63,7 @@ export const TeachingCanvas = forwardRef<CanvasHandle>((_props, ref) => {
       for (const record of log) {
         engine.beginFrame(frameTitle(record.turn));
         for (const segment of record.segments) {
-          engine.apply(segment.visuals);
+          engine.apply(segment.visuals); // instant, silent replay
         }
       }
       engine.focusActiveFrame();

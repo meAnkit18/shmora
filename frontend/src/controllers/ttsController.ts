@@ -3,6 +3,9 @@
 
 type StateListener = (speaking: boolean) => void;
 
+/** Fired as speech crosses word boundaries; charIndex is into the FULL text passed to speak(). */
+export type WordBoundaryListener = (charIndex: number) => void;
+
 const MAX_CHUNK_CHARS = 180;
 
 /** Split text into sentence-ish chunks Chrome will reliably finish. */
@@ -58,13 +61,24 @@ class TTSController {
     this.listeners.forEach((l) => l(speaking));
   }
 
-  private speakChunk(text: string, gen: number): Promise<void> {
+  private speakChunk(
+    text: string,
+    gen: number,
+    baseOffset: number,
+    onWord?: WordBoundaryListener,
+  ): Promise<void> {
     return new Promise<void>((resolve) => {
       if (gen !== this.generation) return resolve();
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate = 1;
       utt.pitch = 1;
       utt.volume = this._volume;
+      if (onWord) {
+        utt.onboundary = (e: SpeechSynthesisEvent) => {
+          if (gen !== this.generation) return;
+          if (typeof e.charIndex === 'number') onWord(baseOffset + e.charIndex);
+        };
+      }
       const finish = () => resolve();
       utt.onend = finish;
       utt.onerror = finish;
@@ -72,8 +86,12 @@ class TTSController {
     });
   }
 
-  /** Speak text; resolves when playback finishes (or is stopped/errors). */
-  async speak(text: string): Promise<void> {
+  /**
+   * Speak text; resolves when playback finishes (or is stopped/errors).
+   * `onWord`, if given, fires as playback crosses each word with the character
+   * index into `text` — used to sync board gestures to speech.
+   */
+  async speak(text: string, onWord?: WordBoundaryListener): Promise<void> {
     if (!this.supported || !text.trim()) return;
     const gen = ++this.generation;
     window.speechSynthesis.cancel();
@@ -82,10 +100,16 @@ class TTSController {
 
     this.emit(true);
     try {
+      let cursor = 0; // maps each chunk back to its offset in the full text
       for (const chunk of chunkText(text)) {
         if (gen !== this.generation) break;
-        await this.speakChunk(chunk, gen);
+        const at = text.indexOf(chunk, cursor);
+        const baseOffset = at >= 0 ? at : cursor;
+        cursor = baseOffset + chunk.length;
+        await this.speakChunk(chunk, gen, baseOffset, onWord);
       }
+      // Chunking may skip trailing words; make sure every pending gesture fires.
+      if (onWord && gen === this.generation) onWord(text.length);
     } finally {
       if (gen === this.generation) this.emit(false);
     }

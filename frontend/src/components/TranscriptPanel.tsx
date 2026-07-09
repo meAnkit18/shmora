@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Message } from '@shared/types';
+import { stripSpeechMarks } from '../lib/speechMarks';
 
 interface Props {
   messages: Message[];
@@ -30,7 +31,7 @@ export function TranscriptPanel({ messages }: Props) {
                 : 'bg-surface-card text-body')
             }
           >
-            {m.text}
+            {stripSpeechMarks(m.text)}
           </span>
         </div>
       ))}
