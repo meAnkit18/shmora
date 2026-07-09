@@ -59,7 +59,7 @@ export function SessionPage() {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [lessons, setLessons] = useState<LessonEntry[]>(() => loadLessons());
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const socketRef = useRef<TeacherClient | null>(null);
   const canvasRef = useRef<CanvasHandle>(null);
@@ -314,7 +314,7 @@ export function SessionPage() {
           <button
             onClick={() => setSidebarOpen(true)}
             title="Open sidebar"
-            className="absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white text-fg-muted transition-colors hover:border-ink/20 hover:text-ink"
+            className="absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-canvas text-fg-muted transition-colors hover:border-ink/30 hover:bg-surface-soft hover:text-ink"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -355,11 +355,11 @@ export function SessionPage() {
               )}
             </header>
 
-            <main className="flex min-h-0 min-w-0 flex-1">
-              <section className="min-h-0 min-w-0 flex-1 bg-white">
+            <main className="flex min-h-0 min-w-0 flex-1 gap-3 bg-canvas p-3">
+              <section className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border border-hairline bg-white">
                 <TeachingCanvas ref={canvasRef} />
               </section>
-              <aside className="flex w-80 min-w-0 shrink-0 flex-col border-l border-hairline bg-surface-soft">
+              <aside className="flex w-80 min-w-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-hairline bg-canvas">
                 <div className="border-b border-hairline">
                   <LessonStatusPanel state={state} />
                 </div>

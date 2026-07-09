@@ -35,7 +35,7 @@ function TrashIcon() {
 
 export function Sidebar({ lessons, activeId, onNew, onSelect, onDelete, onCollapse }: Props) {
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-hairline bg-surface-soft">
+    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-hairline bg-canvas">
       {/* Brand + collapse */}
       <div className="flex h-[60px] items-center justify-between px-3">
         <div className="flex items-center gap-2 pl-1">
