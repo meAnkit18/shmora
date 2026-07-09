@@ -40,6 +40,7 @@ const REVEAL_MS = 220; // fade-in of one reveal group
 const REVEAL_STAGGER_MS = 90; // delay between reveal groups (cell-by-cell feel)
 const ERASE_MS = 320;
 const LABEL_LINGER_MS = 1600;
+const KEEP_FRAMES = 2; // active + previous frame only; older frames are wiped (teacher erases the board)
 
 // ---- Text measurement (deterministic; slightly generous so boxes never clip badly) ----
 let measureCtx: CanvasRenderingContext2D | null = null;
@@ -270,9 +271,10 @@ export class BoardEngine {
     this.api?.updateScene({ elements: [] });
   }
 
-  /** Start a new frame for a turn. Dims all previous frames. */
+  /** Start a new frame for a turn. Wipes old frames, dims the previous one. */
   beginFrame(title: string | null): void {
     if (!this.api) return;
+    this.pruneOldFrames();
     this.dimExistingFrames();
 
     const prev = this.frames[this.frames.length - 1];
@@ -307,6 +309,28 @@ export class BoardEngine {
     this.syncFrameHeight(frame);
   }
 
+  /**
+   * A human teacher wipes the board: only the ACTIVE and PREVIOUS frames stay.
+   * Older frames fade out and are removed, and their refs leave the registry
+   * so gestures can never target ghosts.
+   */
+  private pruneOldFrames(): void {
+    while (this.frames.length >= KEEP_FRAMES) {
+      const old = this.frames.shift()!;
+      const ids = [...old.elementIds];
+      this.purgeRegistry(new Set(ids));
+      void this.animateOpacity(ids, DIM_OLD, 0, 450).then(() => this.removeElements(ids));
+    }
+  }
+
+  private purgeRegistry(removed: Set<string>): void {
+    for (const [key, entry] of [...this.registry]) {
+      if (entry.ids.length && entry.ids.every((id) => removed.has(id))) {
+        this.registry.delete(key);
+      }
+    }
+  }
+
   /** Instant render (hydrate/replay). Pointer intents become static arrows. */
   apply(intents: VisualIntent[]): void {
     if (!this.api) return;
@@ -332,6 +356,7 @@ export class BoardEngine {
       if (intent.kind === 'erase') {
         await this.eraseAnimated(intent.target);
         this.syncFrameHeight(frame);
+        this.focusActiveFrame();
         continue;
       }
       this.animMode = true;
@@ -339,6 +364,7 @@ export class BoardEngine {
       this.applyOne(frame, intent);
       this.animMode = false;
       this.syncFrameHeight(frame);
+      this.focusActiveFrame(); // camera follows: current work stays centered as the frame grows
       if (this.newIds.length) await this.revealNew(this.newIds);
     }
   }

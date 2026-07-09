@@ -27,14 +27,11 @@ function chunkText(text: string): string[] {
   return chunks.length ? chunks : [text];
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 class TTSController {
   private listeners = new Set<StateListener>();
   private _volume = 1;
   private generation = 0; // bumped on every speak()/stop(); stale playback aborts itself
+  private release: (() => void) | null = null; // stop() force-resolves the in-flight speak()
 
   get volume(): number {
     return this._volume;
@@ -61,64 +58,73 @@ class TTSController {
     this.listeners.forEach((l) => l(speaking));
   }
 
-  private speakChunk(
-    text: string,
-    gen: number,
-    baseOffset: number,
-    onWord?: WordBoundaryListener,
-  ): Promise<void> {
-    return new Promise<void>((resolve) => {
-      if (gen !== this.generation) return resolve();
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.rate = 1;
-      utt.pitch = 1;
-      utt.volume = this._volume;
-      if (onWord) {
-        utt.onboundary = (e: SpeechSynthesisEvent) => {
-          if (gen !== this.generation) return;
-          if (typeof e.charIndex === 'number') onWord(baseOffset + e.charIndex);
-        };
-      }
-      const finish = () => resolve();
-      utt.onend = finish;
-      utt.onerror = finish;
-      window.speechSynthesis.speak(utt);
-    });
-  }
-
   /**
    * Speak text; resolves when playback finishes (or is stopped/errors).
    * `onWord`, if given, fires as playback crosses each word with the character
    * index into `text` — used to sync board gestures to speech.
+   *
+   * GAP-FREE DESIGN:
+   *  - cancel() (and its settle delay) is paid ONLY if something is actually
+   *    playing or queued — back-to-back segments start instantly.
+   *  - ALL chunks are queued into speechSynthesis at once, so the engine
+   *    flows from chunk to chunk natively with no JS round-trip in between.
    */
   async speak(text: string, onWord?: WordBoundaryListener): Promise<void> {
     if (!this.supported || !text.trim()) return;
     const gen = ++this.generation;
-    window.speechSynthesis.cancel();
-    await delay(60); // let cancel() settle (Chrome swallows immediate re-speak)
-    if (gen !== this.generation) return;
+    const synth = window.speechSynthesis;
+
+    if (synth.speaking || synth.pending) {
+      synth.cancel();
+      await new Promise((r) => setTimeout(r, 50)); // let cancel() settle (Chrome quirk)
+      if (gen !== this.generation) return;
+    }
 
     this.emit(true);
     try {
-      let cursor = 0; // maps each chunk back to its offset in the full text
-      for (const chunk of chunkText(text)) {
-        if (gen !== this.generation) break;
-        const at = text.indexOf(chunk, cursor);
-        const baseOffset = at >= 0 ? at : cursor;
-        cursor = baseOffset + chunk.length;
-        await this.speakChunk(chunk, gen, baseOffset, onWord);
-      }
-      // Chunking may skip trailing words; make sure every pending gesture fires.
+      await new Promise<void>((resolve) => {
+        this.release = resolve; // stop() resolves us instantly, no waiting on canceled utterances
+        const chunks = chunkText(text);
+        let remaining = chunks.length;
+        if (!remaining) return resolve();
+        let cursor = 0; // maps each chunk back to its offset in the full text
+        for (const chunk of chunks) {
+          const at = text.indexOf(chunk, cursor);
+          const base = at >= 0 ? at : cursor;
+          cursor = base + chunk.length;
+
+          const utt = new SpeechSynthesisUtterance(chunk);
+          utt.rate = 1;
+          utt.pitch = 1;
+          utt.volume = this._volume;
+          if (onWord) {
+            utt.onboundary = (e: SpeechSynthesisEvent) => {
+              if (gen !== this.generation) return;
+              if (typeof e.charIndex === 'number') onWord(base + e.charIndex);
+            };
+          }
+          const done = () => {
+            if (--remaining === 0) resolve();
+          };
+          utt.onend = done;
+          utt.onerror = done;
+          synth.speak(utt); // queue everything now; the engine plays them seamlessly
+        }
+      });
+      // Chunking/boundary events may skip trailing words; flush pending gestures.
       if (onWord && gen === this.generation) onWord(text.length);
     } finally {
+      this.release = null;
       if (gen === this.generation) this.emit(false);
     }
   }
 
   stop(): void {
     if (!this.supported) return;
-    this.generation++; // any in-flight speak() loop exits at its next check
+    this.generation++; // any in-flight speak() aborts at its next generation check
     window.speechSynthesis.cancel();
+    this.release?.(); // resolve the in-flight speak() immediately
+    this.release = null;
     this.emit(false);
   }
 

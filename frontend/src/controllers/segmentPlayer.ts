@@ -13,17 +13,29 @@ export interface PlayerDeps {
 }
 
 /**
- * Plays teaching segments strictly one at a time, enforcing the invariant:
- * render visuals -> painted -> speak. Audio never precedes its visuals.
+ * Plays teaching segments one at a time, enforcing the invariant:
+ * a segment's visuals are painted BEFORE its speech starts.
+ *
+ * PIPELINING (kills the pause between beats): while segment N is being
+ * SPOKEN, segment N+1's visuals are drawn in parallel. When N's speech
+ * ends, N+1's board is already painted, so its speech starts immediately.
+ * The invariant still holds — audio never precedes its own visuals; visuals
+ * merely arrive early, exactly like a teacher writing the next thing while
+ * finishing a sentence.
+ *
+ * A rendered-set guarantees each segment's visuals are drawn at most once
+ * (matters when an interruption stashes an already-prerendered segment:
+ * on resume we only speak it, we don't draw it twice).
  *
  * Interruption: beginInterruption() stops audio and stashes the remaining
- * (not-yet-played) segments; answer segments then play; endInterruption()
+ * (not-yet-spoken) segments; answer segments then play; endInterruption()
  * re-queues the stashed segments so the lesson resumes where it stopped.
  */
 export class SegmentPlayer {
   private queue: Segment[] = [];
   private stash: Segment[] = [];
   private running = false;
+  private rendered = new Set<string>(); // `${turnId}:${seq}` of segments already drawn
 
   constructor(private readonly deps: PlayerDeps) {}
 
@@ -59,7 +71,20 @@ export class SegmentPlayer {
     this.deps.stopSpeaking();
     this.queue = [];
     this.stash = [];
+    this.rendered.clear();
     this.deps.setSpokenText('');
+  }
+
+  private key(seg: Segment): string {
+    return `${seg.turnId}:${seg.seq}`;
+  }
+
+  /** Draw a segment's visuals exactly once. */
+  private async render(seg: Segment): Promise<void> {
+    const k = this.key(seg);
+    if (this.rendered.has(k)) return;
+    this.rendered.add(k);
+    await this.deps.execute(seg);
   }
 
   private async drain(): Promise<void> {
@@ -68,9 +93,16 @@ export class SegmentPlayer {
     try {
       while (this.queue.length > 0) {
         const seg = this.queue.shift()!;
-        await this.deps.execute(seg); // 1. render + wait for paint
-        this.deps.setSpokenText(seg.speech); // 2. arm echo guard
-        await this.deps.speak(seg.speech); // 3. audio (only now)
+        await this.render(seg); // instant no-op if prerendered during the last speech
+        this.deps.setSpokenText(seg.speech); // arm echo guard
+        const speech = this.deps.speak(seg.speech);
+        // Overlap: draw the NEXT segment's visuals while this one is spoken.
+        const next: Segment | undefined = this.queue[0];
+        if (next) {
+          await Promise.all([speech, this.render(next)]);
+        } else {
+          await speech;
+        }
         this.deps.setSpokenText('');
       }
     } finally {

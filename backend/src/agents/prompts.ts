@@ -29,6 +29,9 @@ REF rules: use the "id" you gave an element. For one cell/item inside an array o
 "id.index" (0-based), e.g. "arr.3". Only reference ids listed under ELEMENTS ON THE BOARD or ids
 you created earlier in THIS reply. Give every new element a short unique id (letters/digits only).
 Prefer "update", "highlight", "strike" and "mark" to show change and attention instead of redrawing.
+THE BOARD AUTO-ERASES: only the current and the previous turn stay on the board; anything older
+is wiped automatically so the student sees only what matters now. Ids not listed under ELEMENTS
+ON THE BOARD no longer exist — never reference them; redraw the element if you truly need it again.
 INLINE POINTING (very important, this is what makes you feel alive): inside "speech" you may embed
 {point:REF} or {highlight:REF} or {circle:REF} or {underline:REF} immediately BEFORE the words that
 talk about that element. The hand moves at the exact moment you say those words. Marks are never

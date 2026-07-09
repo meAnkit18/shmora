@@ -42,7 +42,7 @@ interface Runtime {
   state: SessionState;
   seq: number; // per-session segment counter
   log: TurnRecord[]; // every turn + its segments (board replay on resume)
-  registry: string[]; // one line per named element the AI created
+  registry: { turnId: string; lines: string[] }[]; // per-turn element lines (only recent turns survive)
   currentAbort: AbortController | null; // abort handle of the in-flight turn
   prefetch: Prefetch | null;
   chain: Promise<unknown>; // single-flight op queue
@@ -55,6 +55,7 @@ const SESSION_TTL_MS = 30 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_TRANSCRIPT_MESSAGES = 12;
 const MAX_REGISTRY_LINES = 40;
+const KEPT_REGISTRY_TURNS = 2; // mirror of the frontend: only the current + previous frame exist on the board
 const MAX_LOG_TURNS = 60;
 
 // ---- TTL sweeper: abandoned sessions no longer leak until process death ----
@@ -123,7 +124,7 @@ function registryLines(v: VisualIntent): string[] {
 function promptContext(rt: Runtime): PromptContext {
   return {
     transcript: rt.state.conversationHistory.slice(-MAX_TRANSCRIPT_MESSAGES),
-    registry: [...rt.registry],
+    registry: rt.registry.flatMap((b) => b.lines).slice(-MAX_REGISTRY_LINES),
   };
 }
 
@@ -137,10 +138,15 @@ function stamp(rt: Runtime, turn: TurnInfo, draft: SegmentDraft): Segment {
     if (rt.log.length > MAX_LOG_TURNS) rt.log.shift();
   }
   record.segments.push(seg);
-  for (const v of seg.visuals) rt.registry.push(...registryLines(v));
-  if (rt.registry.length > MAX_REGISTRY_LINES) {
-    rt.registry = rt.registry.slice(-MAX_REGISTRY_LINES);
+  let bucket = rt.registry[rt.registry.length - 1];
+  if (!bucket || bucket.turnId !== turn.turnId) {
+    bucket = { turnId: turn.turnId, lines: [] };
+    rt.registry.push(bucket);
+    // The frontend wipes frames older than the previous one; forget their refs
+    // here too so the model is never offered ids that no longer exist.
+    if (rt.registry.length > KEPT_REGISTRY_TURNS) rt.registry.shift();
   }
+  for (const v of seg.visuals) bucket.lines.push(...registryLines(v));
   return seg;
 }
 
