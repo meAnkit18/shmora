@@ -1,21 +1,44 @@
 // Single source of truth for types shared across backend and frontend (over the socket).
 
-// ---- Drawing commands (the AI -> canvas contract) ----
-// Coordinate space is logical 0..1000 on both axes; the canvas maps it to Excalidraw units.
-export type DrawCommand =
-  | { type: 'text'; id: string; x: number; y: number; content: string }
-  | { type: 'rectangle'; id: string; x: number; y: number; w: number; h: number; label?: string }
-  | { type: 'circle'; id: string; x: number; y: number; r: number; label?: string }
-  | { type: 'arrow'; id: string; x1: number; y1: number; x2: number; y2: number; label?: string }
-  | { type: 'line'; id: string; x1: number; y1: number; x2: number; y2: number };
+// ---- Semantic visual language (the AI -> board contract) ----
+// The AI NEVER emits coordinates. It describes WHAT to show; the frontend
+// layout engine (frontend/src/canvas/layoutEngine.ts) decides WHERE.
 
-export type DrawCommandType = DrawCommand['type'];
+/** A reference to an element the AI created earlier: its `id`, or `id.index` for a cell/item. */
+export type ElementRef = string;
+
+export type VisualIntent =
+  | { kind: 'title'; text: string }
+  | { kind: 'note'; id?: string; text: string }
+  | { kind: 'array'; id: string; cells: string[]; caption?: string }
+  | { kind: 'sequence'; id: string; items: string[]; caption?: string }
+  | { kind: 'pointer'; to: ElementRef; label?: string }
+  | { kind: 'highlight'; target: ElementRef; label?: string }
+  | { kind: 'update'; target: ElementRef; text: string };
+
+// ---- Turns: one generation of the teacher (a step, an answer, or the recap) ----
+export type TurnKind = 'teach' | 'answer' | 'closing';
+
+export interface TurnInfo {
+  turnId: string;
+  kind: TurnKind;
+  stepIndex?: number; // set for 'teach' turns
+  stepTitle?: string; // set for 'teach' turns
+}
 
 // ---- A teaching segment: one render+speak beat ----
 export interface Segment {
   id: string;
-  drawings: DrawCommand[]; // rendered FIRST
-  speech: string; // spoken only AFTER drawings are confirmed rendered
+  turnId: string; // which turn produced it (client drops segments from stale turns)
+  seq: number; // per-session monotonically increasing (ordering + replay)
+  visuals: VisualIntent[]; // rendered FIRST
+  speech: string; // spoken only AFTER visuals are painted
+}
+
+/** One turn plus every segment it produced — the unit of board replay on resume. */
+export interface TurnRecord {
+  turn: TurnInfo;
+  segments: Segment[];
 }
 
 // ---- Conversation + state ----
@@ -34,6 +57,7 @@ export interface SessionState {
   pendingSteps: string[];
   paused: boolean;
   pausedReason?: string;
+  completed: boolean; // true after the closing turn has run
   conversationHistory: Message[];
 }
 
@@ -48,18 +72,22 @@ export interface InterruptPayload {
   sessionId: string;
   question: string;
 }
-export interface RenderConfirmPayload {
+export interface ResumeSessionPayload {
   sessionId: string;
-  segmentId: string;
 }
 export interface EndSessionPayload {
   sessionId: string;
 }
 
 // ---- Socket payloads (server -> client) ----
-export interface StepCompletePayload {
-  sessionId: string;
+export interface TurnEndPayload {
+  turnId: string;
+  kind: TurnKind;
   state: SessionState;
+}
+export interface SessionResumedPayload {
+  state: SessionState;
+  log: TurnRecord[]; // full board history, replayed silently by the client
 }
 export interface ErrorPayload {
   message: string;
@@ -68,16 +96,19 @@ export interface ErrorPayload {
 // ---- Typed socket event maps ----
 export interface ClientToServerEvents {
   'session:create': (payload: CreateSessionPayload) => void;
+  'session:resume': (payload: ResumeSessionPayload) => void;
   'lesson:next': (payload: NextStepPayload) => void;
   'user:interrupt': (payload: InterruptPayload) => void;
-  'render:confirm': (payload: RenderConfirmPayload) => void;
   'session:end': (payload: EndSessionPayload) => void;
 }
 
 export interface ServerToClientEvents {
   'session:created': (state: SessionState) => void;
+  'session:resumed': (payload: SessionResumedPayload) => void;
+  'turn:start': (turn: TurnInfo) => void;
   'lesson:segment': (segment: Segment) => void;
-  'lesson:step_complete': (payload: StepCompletePayload) => void;
+  'turn:end': (payload: TurnEndPayload) => void;
+  'lesson:complete': (state: SessionState) => void;
   'state:update': (state: SessionState) => void;
   error: (payload: ErrorPayload) => void;
 }

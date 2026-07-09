@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { SessionState } from '@shared/types';
+import type { SessionState, TurnInfo } from '@shared/types';
 import { createSocket, type TeacherClient } from '../socket/socketClient';
 import { TeachingCanvas, type CanvasHandle } from '../components/TeachingCanvas';
 import { LessonStatusPanel } from '../components/LessonStatusPanel';
@@ -20,6 +20,32 @@ const SUGGESTIONS = [
   'Why the sky is blue',
 ];
 
+// ---- Session persistence (survives page refresh; resumes via session:resume) ----
+const STORAGE_KEY = 'shmora.activeSession';
+
+interface StoredSession {
+  sessionId: string;
+  topic: string;
+}
+
+function loadStoredSession(): StoredSession | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as StoredSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeSession(s: StoredSession | null): void {
+  try {
+    if (s) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    else sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* storage unavailable — resume simply won't work */
+  }
+}
+
 export function SessionPage() {
   const [searchParams] = useSearchParams();
   const [topic, setTopic] = useState(searchParams.get('topic') ?? '');
@@ -38,8 +64,11 @@ export function SessionPage() {
   const canvasRef = useRef<CanvasHandle>(null);
   const playerRef = useRef<SegmentPlayer | null>(null);
   const stateRef = useRef<SessionState | null>(null);
-  const stepDoneRef = useRef(false);
-  const interruptingRef = useRef(false);
+  const stepDoneRef = useRef(false); // current teach turn's generation finished
+  const interruptingRef = useRef(false); // waiting for the answer turn
+  const completedRef = useRef(false); // lesson finished (closing turn done)
+  const resumingRef = useRef(false); // session:resume in flight
+  const currentTurnRef = useRef<TurnInfo | null>(null); // only its segments play
 
   // keep a ref mirror of state for use inside stable callbacks
   useEffect(() => {
@@ -50,29 +79,36 @@ export function SessionPage() {
     const socket = createSocket();
     socketRef.current = socket;
 
+    // Advance to the next step when the current one has both finished
+    // generating (stepDone) AND finished playing (player idle).
+    const maybeAdvance = () => {
+      if (interruptingRef.current || completedRef.current) return;
+      const s = stateRef.current;
+      if (!s || !stepDoneRef.current) return;
+      stepDoneRef.current = false;
+      // No `< steps.length - 1` guard anymore: after the last step the
+      // server responds with a closing turn, then lesson:complete.
+      socket.emit('lesson:next', { sessionId: s.sessionId });
+    };
+
     const player = new SegmentPlayer({
-      execute: (d) => canvasRef.current?.execute(d) ?? Promise.resolve(),
+      execute: (seg) => canvasRef.current?.execute(seg) ?? Promise.resolve(),
       speak: (t) => tts.speak(t),
       stopSpeaking: () => tts.stop(),
-      onConfirm: (segmentId) =>
-        socket.emit('render:confirm', {
-          sessionId: stateRef.current?.sessionId ?? '',
-          segmentId,
-        }),
       setSpokenText: (t) => voice.setSpokenText(t),
-      onIdle: () => {
-        if (interruptingRef.current) return; // waiting for answer/resume
-        const s = stateRef.current;
-        if (!s || !stepDoneRef.current) return;
-        if (s.currentStep < s.steps.length - 1) {
-          stepDoneRef.current = false;
-          socket.emit('lesson:next', { sessionId: s.sessionId });
-        }
-      },
+      onIdle: maybeAdvance,
     });
     playerRef.current = player;
 
-    socket.on('connect', () => setConnected(true));
+    socket.on('connect', () => {
+      setConnected(true);
+      // Page was refreshed mid-lesson: re-attach to the live session.
+      const stored = loadStoredSession();
+      if (stored && !stateRef.current && !resumingRef.current) {
+        resumingRef.current = true;
+        socket.emit('session:resume', { sessionId: stored.sessionId });
+      }
+    });
     socket.on('disconnect', () => setConnected(false));
 
     socket.on('session:created', (s) => {
@@ -80,29 +116,80 @@ export function SessionPage() {
       setStarting(false);
       stepDoneRef.current = false;
       interruptingRef.current = false;
+      completedRef.current = false;
+      currentTurnRef.current = null;
       canvasRef.current?.clear();
       player.reset();
       setState(s);
+      storeSession({ sessionId: s.sessionId, topic: s.topic });
       setLessons(saveLesson({ id: s.sessionId, topic: s.topic, ts: Date.now() }));
     });
 
-    socket.on('lesson:segment', (seg) => player.enqueue(seg));
-
-    socket.on('lesson:step_complete', ({ state: s }) => {
-      stepDoneRef.current = true;
+    socket.on('session:resumed', ({ state: s, log }) => {
+      resumingRef.current = false;
+      setError(null);
+      setStarting(false);
+      stepDoneRef.current = false;
+      interruptingRef.current = false;
+      completedRef.current = s.completed;
+      currentTurnRef.current = null;
+      player.reset();
       setState(s);
+      setTopic(s.topic);
+      // Rebuild the board silently from the turn log, then continue the
+      // lesson from the next step. (Anything unheard from the step that was
+      // playing at refresh time is skipped — its visuals are replayed.)
+      void canvasRef.current?.hydrate(log).then(() => {
+        if (!s.completed) {
+          socket.emit('lesson:next', { sessionId: s.sessionId });
+        }
+      });
     });
 
-    socket.on('state:update', (s) => {
+    socket.on('turn:start', (turn) => {
+      currentTurnRef.current = turn;
+      canvasRef.current?.beginTurn(turn);
+    });
+
+    socket.on('lesson:segment', (seg) => {
+      // Drop segments from stale (aborted) turns — leftovers from an
+      // interrupted step can no longer play as if they were the answer.
+      if (seg.turnId !== currentTurnRef.current?.turnId) return;
+      player.enqueue(seg);
+    });
+
+    socket.on('turn:end', ({ kind, state: s }) => {
       setState(s);
-      // resume path: backend reports paused=false after answering
-      if (!s.paused && interruptingRef.current) {
+      if (kind === 'teach') {
+        stepDoneRef.current = true;
+        // Generation can outlast playback: if the audio already finished
+        // (player idle), onIdle has come and gone — advance now.
+        if (player.idle) maybeAdvance();
+      } else if (kind === 'answer') {
         interruptingRef.current = false;
-        player.endInterruption();
+        player.endInterruption(); // resume stashed lesson segments
+      } else if (kind === 'closing') {
+        stepDoneRef.current = false;
       }
     });
 
+    socket.on('lesson:complete', (s) => {
+      setState(s);
+      completedRef.current = true;
+      stepDoneRef.current = false;
+    });
+
+    socket.on('state:update', (s) => setState(s));
+
     socket.on('error', ({ message }) => {
+      if (resumingRef.current) {
+        // Stored session no longer exists on the server (restart / TTL):
+        // clear it quietly and show the empty state, not a scary banner.
+        resumingRef.current = false;
+        storeSession(null);
+        setStarting(false);
+        return;
+      }
       setError(message);
       setStarting(false);
     });
@@ -129,12 +216,17 @@ export function SessionPage() {
   };
 
   const newLesson = () => {
+    const s = stateRef.current;
+    if (s) socketRef.current?.emit('session:end', { sessionId: s.sessionId });
+    storeSession(null);
     voice.stop();
     setListening(false);
     tts.stop();
     playerRef.current?.reset();
     interruptingRef.current = false;
     stepDoneRef.current = false;
+    completedRef.current = false;
+    currentTurnRef.current = null;
     setState(null);
     setTopic('');
     setError(null);
@@ -154,6 +246,7 @@ export function SessionPage() {
   const askQuestion = (question: string) => {
     const s = stateRef.current;
     if (!s || !socketRef.current || interruptingRef.current) return;
+    if (completedRef.current) return; // lesson is over
     interruptingRef.current = true;
     playerRef.current?.beginInterruption();
     socketRef.current.emit('user:interrupt', { sessionId: s.sessionId, question });
@@ -245,6 +338,9 @@ export function SessionPage() {
                 title={connected ? 'connected' : 'disconnected'}
               />
               {starting && <span className="text-caption text-fg-soft">starting…</span>}
+              {state.completed && (
+                <span className="text-caption text-fg-soft">lesson complete</span>
+              )}
             </header>
 
             <main className="flex min-h-0 flex-1">

@@ -1,14 +1,24 @@
-import type { SessionState, Segment } from '../../../shared/types.js';
-import { chat, streamChat } from '../ai/aiClient.js';
-import { SegmentExtractor } from '../ai/segmentParser.js';
+import type { SessionState } from '../../../shared/types.js';
+import { chat, streamChat, isAbortError } from '../ai/aiClient.js';
+import { SegmentExtractor, type SegmentDraft } from '../ai/segmentParser.js';
 import {
+  planAndTeachSystemPrompt,
+  planAndTeachUserPrompt,
   planSystemPrompt,
   planUserPrompt,
   teachSystemPrompt,
   teachUserPrompt,
   answerSystemPrompt,
   answerUserPrompt,
+  closingSystemPrompt,
+  closingUserPrompt,
+  type PromptContext,
 } from './prompts.js';
+
+export interface GenOptions {
+  signal?: AbortSignal;
+  onSegment: (segment: SegmentDraft) => void;
+}
 
 /** Extract the first JSON array of strings from a possibly-fenced model reply. */
 function parseStepList(raw: string): string[] | null {
@@ -25,74 +35,131 @@ function parseStepList(raw: string): string[] | null {
   }
 }
 
-/** Plan an ordered lesson step list for a topic. Retries once on failure. */
-export async function planLesson(topic: string): Promise<string[]> {
+/** Fallback: plan-only call. Retries once on failure. */
+export async function planLesson(topic: string, signal?: AbortSignal): Promise<string[]> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const reply = await chat([
-      { role: 'system', content: planSystemPrompt() },
-      { role: 'user', content: planUserPrompt(topic) },
-    ]);
+    const reply = await chat(
+      [
+        { role: 'system', content: planSystemPrompt() },
+        { role: 'user', content: planUserPrompt(topic) },
+      ],
+      { signal },
+    );
     const steps = parseStepList(reply);
     if (steps) return steps;
   }
   throw new Error(`Failed to plan a lesson for topic: ${topic}`);
 }
 
-interface StreamSegments {
+interface StreamSegmentsArgs {
   system: string;
   user: string;
-  onSegment: (segment: Segment) => void;
+  signal?: AbortSignal;
+  onSegment: (segment: SegmentDraft) => void;
+  onPlan?: (steps: string[]) => void;
 }
 
 /**
- * Streams teaching segments through the SegmentExtractor. If the stream yields
- * zero valid segments, retries once with a stricter nudge.
+ * Streams segments through the SegmentExtractor. If the stream yields zero
+ * valid segments (and was NOT aborted), retries once with a stricter nudge.
  */
-async function streamSegments({ system, user, onSegment }: StreamSegments): Promise<number> {
+async function streamSegments({
+  system,
+  user,
+  signal,
+  onSegment,
+  onPlan,
+}: StreamSegmentsArgs): Promise<number> {
   let emitted = 0;
   const run = async (extraNudge?: string) => {
-    const extractor = new SegmentExtractor((seg) => {
-      emitted++;
-      onSegment(seg);
+    const extractor = new SegmentExtractor({
+      onSegment: (seg) => {
+        emitted++;
+        onSegment(seg);
+      },
+      ...(onPlan ? { onPlan } : {}),
     });
     await streamChat({
       messages: [
         { role: 'system', content: system + (extraNudge ? `\n${extraNudge}` : '') },
         { role: 'user', content: user },
       ],
-      // This model spends many tokens on reasoning before content; budget for it.
-      maxTokens: 4000,
+      // Reasoning models spend many tokens before content; budget for it.
+      maxTokens: 6000,
+      signal,
       onContentDelta: (delta) => extractor.push(delta),
     });
     extractor.end();
   };
 
-  await run();
-  if (emitted === 0) {
+  try {
+    await run();
+  } catch (err) {
+    if (isAbortError(err)) return emitted; // deliberate cancellation, not a failure
+    throw err;
+  }
+  if (emitted === 0 && !signal?.aborted) {
     await run('Your previous reply was invalid. Return ONLY a valid JSON array of segments.');
   }
   return emitted;
 }
 
+/**
+ * Fused cold start: one streamed call that yields the plan first, then the
+ * segments of step 1. onPlan fires as soon as the plan object closes — the
+ * caller creates the session at that moment, long before generation finishes.
+ */
+export function planAndTeachFirstStep(args: {
+  topic: string;
+  signal?: AbortSignal;
+  onPlan: (steps: string[]) => void;
+  onSegment: (segment: SegmentDraft) => void;
+}): Promise<number> {
+  return streamSegments({
+    system: planAndTeachSystemPrompt(),
+    user: planAndTeachUserPrompt(args.topic),
+    signal: args.signal,
+    onSegment: args.onSegment,
+    onPlan: args.onPlan,
+  });
+}
+
 export function teachStep(
   state: SessionState,
-  onSegment: (segment: Segment) => void,
+  ctx: PromptContext,
+  opts: GenOptions,
 ): Promise<number> {
   return streamSegments({
     system: teachSystemPrompt(),
-    user: teachUserPrompt(state),
-    onSegment,
+    user: teachUserPrompt(state, ctx),
+    signal: opts.signal,
+    onSegment: opts.onSegment,
   });
 }
 
 export function answer(
   state: SessionState,
+  ctx: PromptContext,
   question: string,
-  onSegment: (segment: Segment) => void,
+  opts: GenOptions,
 ): Promise<number> {
   return streamSegments({
     system: answerSystemPrompt(),
-    user: answerUserPrompt(state, question),
-    onSegment,
+    user: answerUserPrompt(state, ctx, question),
+    signal: opts.signal,
+    onSegment: opts.onSegment,
+  });
+}
+
+export function closing(
+  state: SessionState,
+  ctx: PromptContext,
+  opts: GenOptions,
+): Promise<number> {
+  return streamSegments({
+    system: closingSystemPrompt(),
+    user: closingUserPrompt(state, ctx),
+    signal: opts.signal,
+    onSegment: opts.onSegment,
   });
 }

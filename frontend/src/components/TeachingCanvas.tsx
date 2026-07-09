@@ -1,12 +1,16 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
-import type { DrawCommand } from '@shared/types';
-import { executeDrawCommands, clearCanvas, type ExcalidrawAPI } from '../canvas/drawCommands';
+import type { Segment, TurnInfo, TurnRecord } from '@shared/types';
+import { BoardEngine, type ExcalidrawAPI } from '../canvas/layoutEngine';
 
 export interface CanvasHandle {
-  /** Render commands, then resolve once the browser has painted them. */
-  execute: (drawings: DrawCommand[]) => Promise<void>;
+  /** Open a new frame for a turn (teach step / question / recap). */
+  beginTurn: (turn: TurnInfo) => void;
+  /** Render a segment's visuals, then resolve once the browser has painted them. */
+  execute: (segment: Segment) => Promise<void>;
+  /** Replay a whole session's visuals silently (resume after refresh). */
+  hydrate: (log: TurnRecord[]) => Promise<void>;
   clear: () => void;
   isReady: () => boolean;
 }
@@ -18,18 +22,44 @@ function nextPaint(): Promise<void> {
   );
 }
 
+function frameTitle(turn: TurnInfo): string | null {
+  switch (turn.kind) {
+    case 'teach':
+      return turn.stepTitle ?? (turn.stepIndex != null ? `Step ${turn.stepIndex + 1}` : null);
+    case 'answer':
+      return 'Question';
+    case 'closing':
+      return 'Recap';
+  }
+}
+
 export const TeachingCanvas = forwardRef<CanvasHandle>((_props, ref) => {
-  const apiRef = useRef<ExcalidrawAPI | null>(null);
+  const engineRef = useRef<BoardEngine>(new BoardEngine());
 
   useImperativeHandle(ref, () => ({
-    isReady: () => apiRef.current !== null,
-    clear: () => {
-      if (apiRef.current) clearCanvas(apiRef.current);
+    isReady: () => engineRef.current.ready,
+    clear: () => engineRef.current.reset(),
+    beginTurn: (turn: TurnInfo) => {
+      engineRef.current.beginFrame(frameTitle(turn));
     },
-    execute: async (drawings: DrawCommand[]) => {
-      const api = apiRef.current;
-      if (!api) return;
-      executeDrawCommands(api, drawings);
+    execute: async (segment: Segment) => {
+      const engine = engineRef.current;
+      if (!engine.ready) return;
+      engine.apply(segment.visuals);
+      engine.focusActiveFrame();
+      await nextPaint();
+    },
+    hydrate: async (log: TurnRecord[]) => {
+      const engine = engineRef.current;
+      if (!engine.ready) return;
+      engine.reset();
+      for (const record of log) {
+        engine.beginFrame(frameTitle(record.turn));
+        for (const segment of record.segments) {
+          engine.apply(segment.visuals);
+        }
+      }
+      engine.focusActiveFrame();
       await nextPaint();
     },
   }));
@@ -38,11 +68,11 @@ export const TeachingCanvas = forwardRef<CanvasHandle>((_props, ref) => {
     <div className="h-full w-full">
       <Excalidraw
         excalidrawAPI={(api) => {
-          apiRef.current = api;
+          engineRef.current.setApi(api as unknown as ExcalidrawAPI);
           // DEV-only verification hook (stripped from prod builds).
           if (import.meta.env.DEV) {
-            (window as unknown as { __getShapeCount?: () => number }).__getShapeCount =
-              () => api.getSceneElements().length;
+            (window as unknown as { __getShapeCount?: () => number }).__getShapeCount = () =>
+              (api as unknown as ExcalidrawAPI).getSceneElements().length;
           }
         }}
         viewModeEnabled={true}

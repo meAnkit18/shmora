@@ -20,10 +20,19 @@ function words(s: string): string[] {
     .filter(Boolean);
 }
 
+// Words that signal a genuine question/command — never filter these as echo,
+// even when they overlap the teacher's own words (real questions usually do).
+const INTENT_WORDS = new Set([
+  'what', 'why', 'how', 'when', 'where', 'which', 'who',
+  'wait', 'stop', 'pause', 'repeat', 'again', 'explain',
+  'slower', 'sorry', 'question', 'confused', 'dont', 'understand',
+]);
+
 /** True if `transcript` looks like the recognizer hearing the teacher's own speech. */
 function isEcho(transcript: string, spokenText: string): boolean {
   const t = words(transcript);
   if (t.length === 0) return true;
+  if (t.some((w) => INTENT_WORDS.has(w))) return false; // genuine question/command
   const spoken = new Set(words(spokenText));
   if (spoken.size === 0) return false;
   const overlap = t.filter((w) => spoken.has(w)).length;

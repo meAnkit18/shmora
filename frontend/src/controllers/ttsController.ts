@@ -3,12 +3,39 @@
 
 type StateListener = (speaking: boolean) => void;
 
+const MAX_CHUNK_CHARS = 180;
+
+/** Split text into sentence-ish chunks Chrome will reliably finish. */
+function chunkText(text: string): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+["')\]]*|\S[^.!?]*$/g) ?? [text];
+  const chunks: string[] = [];
+  let current = '';
+  for (const raw of sentences) {
+    const s = raw.trim();
+    if (!s) continue;
+    if (current && current.length + s.length + 1 > MAX_CHUNK_CHARS) {
+      chunks.push(current);
+      current = s;
+    } else {
+      current = current ? `${current} ${s}` : s;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.length ? chunks : [text];
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 class TTSController {
-  private current: SpeechSynthesisUtterance | null = null;
   private listeners = new Set<StateListener>();
   private _volume = 1;
+  private generation = 0; // bumped on every speak()/stop(); stale playback aborts itself
 
-  get volume(): number { return this._volume; }
+  get volume(): number {
+    return this._volume;
+  }
 
   setVolume(v: number): void {
     this._volume = Math.max(0, Math.min(1, v));
@@ -31,34 +58,43 @@ class TTSController {
     this.listeners.forEach((l) => l(speaking));
   }
 
-  /** Speak text; resolves when playback finishes (or is stopped/errors). */
-  speak(text: string): Promise<void> {
-    if (!this.supported || !text.trim()) return Promise.resolve();
-    // Cancel anything still queued before starting the next utterance.
-    window.speechSynthesis.cancel();
-
+  private speakChunk(text: string, gen: number): Promise<void> {
     return new Promise<void>((resolve) => {
+      if (gen !== this.generation) return resolve();
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate = 1;
       utt.pitch = 1;
       utt.volume = this._volume;
-      const finish = () => {
-        if (this.current === utt) this.current = null;
-        this.emit(false);
-        resolve();
-      };
+      const finish = () => resolve();
       utt.onend = finish;
       utt.onerror = finish;
-      this.current = utt;
-      this.emit(true);
       window.speechSynthesis.speak(utt);
     });
   }
 
+  /** Speak text; resolves when playback finishes (or is stopped/errors). */
+  async speak(text: string): Promise<void> {
+    if (!this.supported || !text.trim()) return;
+    const gen = ++this.generation;
+    window.speechSynthesis.cancel();
+    await delay(60); // let cancel() settle (Chrome swallows immediate re-speak)
+    if (gen !== this.generation) return;
+
+    this.emit(true);
+    try {
+      for (const chunk of chunkText(text)) {
+        if (gen !== this.generation) break;
+        await this.speakChunk(chunk, gen);
+      }
+    } finally {
+      if (gen === this.generation) this.emit(false);
+    }
+  }
+
   stop(): void {
     if (!this.supported) return;
+    this.generation++; // any in-flight speak() loop exits at its next check
     window.speechSynthesis.cancel();
-    this.current = null;
     this.emit(false);
   }
 

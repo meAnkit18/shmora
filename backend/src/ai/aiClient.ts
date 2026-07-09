@@ -5,23 +5,34 @@ export interface ChatMessage {
   content: string;
 }
 
+/** True if an error came from an aborted request (deliberate cancellation, not a failure). */
+export function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === 'AbortError') ||
+    (err instanceof Error && err.name === 'AbortError')
+  );
+}
+
 interface StreamChatArgs {
   messages: ChatMessage[];
   onContentDelta: (delta: string) => void;
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }
 
 /**
  * Streams a chat completion from the OpenAI-compatible endpoint.
  * IMPORTANT: this model emits `reasoning_content` deltas before `content` deltas.
  * We forward only `content`.
+ * Aborting the signal cancels the request; the AbortError propagates to the caller.
  */
 export async function streamChat({
   messages,
   onContentDelta,
   temperature = 0.4,
-  maxTokens = 1500,
+  maxTokens = 4000,
+  signal,
 }: StreamChatArgs): Promise<string> {
   const res = await fetch(`${config.ai.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -36,6 +47,7 @@ export async function streamChat({
       max_tokens: maxTokens,
       messages,
     }),
+    signal,
   });
 
   if (!res.ok || !res.body) {
@@ -79,10 +91,10 @@ export async function streamChat({
   return full;
 }
 
-/** Non-streamed completion (used for lesson planning). Returns the full content string. */
+/** Non-streamed completion (fallback lesson planning). Returns the full content string. */
 export async function chat(
   messages: ChatMessage[],
-  opts: { temperature?: number; maxTokens?: number } = {},
+  opts: { temperature?: number; maxTokens?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
   const res = await fetch(`${config.ai.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -93,9 +105,12 @@ export async function chat(
     body: JSON.stringify({
       model: config.ai.model,
       temperature: opts.temperature ?? 0.4,
-      max_tokens: opts.maxTokens ?? 800,
+      // Reasoning models can burn most of the budget before emitting content,
+      // which previously starved planning (800 tokens) into silent failure.
+      max_tokens: opts.maxTokens ?? 3000,
       messages,
     }),
+    signal: opts.signal,
   });
 
   if (!res.ok) {

@@ -3,18 +3,17 @@ import type {
   CreateSessionPayload,
   NextStepPayload,
   InterruptPayload,
+  ResumeSessionPayload,
   EndSessionPayload,
 } from '../../../shared/types.js';
 import {
   createSession,
-  teachCurrentStep,
-  advanceToNextStep,
-  pauseForInterrupt,
-  answerAndResume,
+  nextStep,
+  interrupt,
+  resumeSession,
   endSession,
-  getSession,
+  type TurnEmitter,
 } from '../services/sessionService.js';
-import { isLessonComplete } from '../services/lessonFlow.js';
 
 function emitError(socket: TeacherSocket, err: unknown): void {
   const message = err instanceof Error ? err.message : 'Unexpected error';
@@ -22,16 +21,34 @@ function emitError(socket: TeacherSocket, err: unknown): void {
   socket.emit('error', { message });
 }
 
+function emitterFor(socket: TeacherSocket): TurnEmitter {
+  return {
+    created: (state) => socket.emit('session:created', state),
+    turnStart: (turn) => socket.emit('turn:start', turn),
+    segment: (segment) => socket.emit('lesson:segment', segment),
+    turnEnd: (turn, state) =>
+      socket.emit('turn:end', { turnId: turn.turnId, kind: turn.kind, state }),
+    stateUpdate: (state) => socket.emit('state:update', state),
+    complete: (state) => socket.emit('lesson:complete', state),
+  };
+}
+
 /** Registers all session-related socket handlers for one connection. */
 export function registerSessionHandlers(socket: TeacherSocket): void {
+  const emitter = emitterFor(socket);
+
   socket.on('session:create', async ({ topic }: CreateSessionPayload) => {
     try {
-      const state = await createSession(topic);
-      socket.emit('session:created', state);
-      await teachCurrentStep(state.sessionId, (seg) => socket.emit('lesson:segment', seg));
-      const after = getSession(state.sessionId);
-      socket.emit('lesson:step_complete', { sessionId: after.sessionId, state: after });
-      socket.emit('state:update', after);
+      await createSession(topic, emitter);
+    } catch (err) {
+      emitError(socket, err);
+    }
+  });
+
+  socket.on('session:resume', ({ sessionId }: ResumeSessionPayload) => {
+    try {
+      const { state, log } = resumeSession(sessionId);
+      socket.emit('session:resumed', { state, log });
     } catch (err) {
       emitError(socket, err);
     }
@@ -39,16 +56,7 @@ export function registerSessionHandlers(socket: TeacherSocket): void {
 
   socket.on('lesson:next', async ({ sessionId }: NextStepPayload) => {
     try {
-      const state = advanceToNextStep(sessionId);
-      socket.emit('state:update', state);
-      if (isLessonComplete(state)) {
-        socket.emit('lesson:step_complete', { sessionId, state });
-        return;
-      }
-      await teachCurrentStep(sessionId, (seg) => socket.emit('lesson:segment', seg));
-      const after = getSession(sessionId);
-      socket.emit('lesson:step_complete', { sessionId, state: after });
-      socket.emit('state:update', after);
+      await nextStep(sessionId, emitter);
     } catch (err) {
       emitError(socket, err);
     }
@@ -56,12 +64,7 @@ export function registerSessionHandlers(socket: TeacherSocket): void {
 
   socket.on('user:interrupt', async ({ sessionId, question }: InterruptPayload) => {
     try {
-      const paused = pauseForInterrupt(sessionId, question);
-      socket.emit('state:update', paused); // UI shows paused=true immediately
-      const resumed = await answerAndResume(sessionId, question, (seg) =>
-        socket.emit('lesson:segment', seg),
-      );
-      socket.emit('state:update', resumed); // paused=false after answer
+      await interrupt(sessionId, question, emitter);
     } catch (err) {
       emitError(socket, err);
     }
