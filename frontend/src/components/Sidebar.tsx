@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   GraduationCap,
   History as HistoryIcon,
@@ -7,6 +8,7 @@ import {
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
+  PencilRuler,
   Trash2,
 } from 'lucide-react';
 import { SharpenerGlyph } from './SharpenerGlyph';
@@ -58,6 +60,7 @@ function NavRow({
 }
 
 export function Sidebar({ lessons, activeId, onNew, onSelect, onDelete }: Props) {
+  const navigate = useNavigate();
   const [hovered, setHovered] = useState(false);
   const [pinned, setPinned] = useState(false);
   const expanded = hovered || pinned;
@@ -95,6 +98,12 @@ export function Sidebar({ lessons, activeId, onNew, onSelect, onDelete }: Props)
         <nav className="flex flex-col gap-0.5 px-2.5 py-1">
           <NavRow icon={<Plus size={20} />} label="New lesson" expanded={expanded} onClick={onNew} />
           <NavRow icon={<GraduationCap size={20} />} label="Learn" expanded={expanded} onClick={onNew} />
+          <NavRow
+            icon={<PencilRuler size={20} />}
+            label="Studio"
+            expanded={expanded}
+            onClick={() => navigate('/studio')}
+          />
         </nav>
 
         <div className="mt-1 flex min-h-0 flex-1 flex-col px-2.5">

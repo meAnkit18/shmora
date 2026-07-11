@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { config } from './config.js';
 import { healthRouter } from './routes/health.js';
+import { coursesRouter } from './routes/courses.js';
 import { registerGateway, type TeacherServer } from './socket/gateway.js';
 import type {
   ClientToServerEvents,
@@ -12,8 +13,9 @@ import type {
 
 const app = express();
 app.use(cors({ origin: config.clientOrigin }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(healthRouter);
+app.use(coursesRouter);
 
 const httpServer = createServer(app);
 const io: TeacherServer = new Server<ClientToServerEvents, ServerToClientEvents>(

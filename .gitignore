@@ -25,3 +25,6 @@ Thumbs.db
 
 # Graphify auto-generated output
 graphify-out/
+
+# Backend runtime data
+backend/data/

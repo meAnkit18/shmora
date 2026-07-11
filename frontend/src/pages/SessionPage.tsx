@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowUp } from 'lucide-react';
+import { HomeFeed } from '../components/HomeFeed';
+import { SuggestedCourses } from '../components/courses/SuggestedCourses';
 import type { SessionState, TurnInfo } from '@shared/types';
 import { createSocket, type TeacherClient } from '../socket/socketClient';
 import { TeachingCanvas, type CanvasHandle } from '../components/TeachingCanvas';
@@ -15,12 +17,7 @@ import { voice } from '../controllers/voiceController';
 import { loadLessons, saveLesson, deleteLesson, type LessonEntry } from '../lib/lessonHistory';
 import { parseSpeechMarks, stripSpeechMarks } from '../lib/speechMarks';
 
-const SUGGESTIONS = [
-  'Binary search from scratch',
-  'How neural networks learn',
-  'The basics of music theory',
-  'Why the sky is blue',
-];
+const SUGGESTIONS: string[] = [];
 
 // ---- Session persistence (survives page refresh; resumes via session:resume) ----
 const STORAGE_KEY = 'shmora.activeSession';
@@ -382,67 +379,79 @@ interface EmptyStateProps {
   connected: boolean;
 }
 
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Breakfast and Learn';
+  if (h < 17) return 'Lunch and Learn';
+  if (h < 21) return 'Dinner and Learn';
+  return 'Nightcap and Learn';
+}
+
 function EmptyState({ topic, setTopic, onStart, starting, connected }: EmptyStateProps) {
   const canStart = connected && !starting && topic.trim().length > 0;
+  const label = greeting();
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6">
-      <div className="w-full max-w-2xl">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <SharpenerGlyph size={56} className="mb-5 text-brand" />
-          <h1 className="font-display text-display-sm text-ink sm:text-display-md">
-            What do you want to learn today?
-          </h1>
-          <p className="mt-3 text-body-md text-body">
-            Type any topic and your AI teacher will explain it with voice and a live whiteboard.
-          </p>
-        </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex flex-col items-center px-6 pb-12 pt-14 sm:pt-20">
+        <div className="w-full max-w-2xl">
+          <div className="mb-8 flex items-baseline justify-center gap-3">
+            <SharpenerGlyph size={44} className="shrink-0 text-brand" />
+            <h1 className="font-display text-display-sm text-ink sm:text-display-md">
+              {label} :)
+            </h1>
+          </div>
 
-        <div className="relative rounded-[18px] border border-hairline bg-white p-2 transition-all duration-200 ease-out focus-within:border-brand/40 focus-within:ring-2 focus-within:ring-brand/15 motion-reduce:transition-none">
-          <input
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && canStart && onStart()}
-            placeholder="Teach me Binary Search from scratch…"
-            autoFocus
-            className="h-12 w-full rounded-[14px] bg-transparent pl-4 pr-14 text-body-md text-ink placeholder:text-fg-soft focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => canStart && onStart()}
-            aria-disabled={!canStart}
-            title={canStart ? 'Start lesson' : 'Type a topic to begin'}
-            className={
-              'absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-brand bg-brand text-white transition-all duration-200 ease-out motion-reduce:transition-none ' +
-              (canStart
-                ? 'cursor-pointer hover:bg-brand-active active:scale-95'
-                : 'cursor-not-allowed')
-            }
-          >
-            {starting ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-            ) : (
-              <ArrowUp size={18} strokeWidth={2.25} />
-            )}
-          </button>
-        </div>
-
-        <div className="mt-5 flex flex-wrap justify-center gap-2">
-          {SUGGESTIONS.map((s) => (
+          <div className="relative rounded-[18px] border border-hairline bg-white p-2 transition-all duration-200 ease-out focus-within:border-brand/40 focus-within:ring-2 focus-within:ring-brand/15 motion-reduce:transition-none">
+            <input
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && canStart && onStart()}
+              placeholder="Teach me Binary Search from scratch…"
+              autoFocus
+              className="h-12 w-full rounded-[14px] bg-transparent pl-4 pr-14 text-body-md text-ink placeholder:text-fg-soft focus:outline-none"
+            />
             <button
-              key={s}
-              onClick={() => setTopic(s)}
-              className="rounded-pill border border-hairline bg-surface-card px-4 py-2 text-body-sm text-body transition-colors duration-200 ease-out hover:border-brand/40 hover:text-brand motion-reduce:transition-none"
+              type="button"
+              onClick={() => canStart && onStart()}
+              aria-disabled={!canStart}
+              title={canStart ? 'Start lesson' : 'Type a topic to begin'}
+              className={
+                'absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-brand bg-brand text-white transition-all duration-200 ease-out motion-reduce:transition-none ' +
+                (canStart
+                  ? 'cursor-pointer hover:bg-brand-active active:scale-95'
+                  : 'cursor-not-allowed')
+              }
             >
-              {s}
+              {starting ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <ArrowUp size={18} strokeWidth={2.25} />
+              )}
             </button>
-          ))}
-        </div>
+          </div>
 
-        {!connected && (
-          <p className="mt-6 text-center text-caption text-fg-soft">Connecting to your teacher…</p>
-        )}
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setTopic(s)}
+                className="rounded-pill border border-hairline bg-surface-card px-4 py-2 text-body-sm text-body transition-colors duration-200 ease-out hover:border-brand/40 hover:text-brand motion-reduce:transition-none"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
+          {!connected && (
+            <p className="mt-6 text-center text-caption text-fg-soft">Connecting to your teacher…</p>
+          )}
+        </div>
       </div>
+
+      <SuggestedCourses />
+
+      <HomeFeed />
     </div>
   );
 }
