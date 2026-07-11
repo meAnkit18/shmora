@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { ArrowUp } from 'lucide-react';
 import type { SessionState, TurnInfo } from '@shared/types';
 import { createSocket, type TeacherClient } from '../socket/socketClient';
 import { TeachingCanvas, type CanvasHandle } from '../components/TeachingCanvas';
@@ -59,7 +60,7 @@ export function SessionPage() {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [lessons, setLessons] = useState<LessonEntry[]>(() => loadLessons());
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+
 
   const socketRef = useRef<TeacherClient | null>(null);
   const canvasRef = useRef<CanvasHandle>(null);
@@ -298,30 +299,16 @@ export function SessionPage() {
 
   return (
     <div className="flex h-full w-full overflow-x-hidden bg-canvas text-body">
-      {sidebarOpen && (
-        <Sidebar
-          lessons={lessons}
-          activeId={state?.sessionId ?? null}
-          onNew={newLesson}
-          onSelect={selectLesson}
-          onDelete={removeLesson}
-          onCollapse={() => setSidebarOpen(false)}
-        />
-      )}
+      <Sidebar
+        lessons={lessons}
+        activeId={state?.sessionId ?? null}
+        onNew={newLesson}
+        onSelect={selectLesson}
+        onDelete={removeLesson}
+      />
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        {!sidebarOpen && (
-          <button
-            onClick={() => setSidebarOpen(true)}
-            title="Open sidebar"
-            className="absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-canvas text-fg-muted transition-colors hover:border-ink/30 hover:bg-surface-soft hover:text-ink"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <rect x="3" y="4" width="18" height="16" rx="2" />
-              <path d="M9 4v16" />
-            </svg>
-          </button>
-        )}
+
 
         {error && (
           <div data-error-banner className="border-b border-error/20 bg-error/10 px-4 py-2 text-body-sm text-error">{error}</div>
@@ -339,11 +326,10 @@ export function SessionPage() {
             onStart={() => startSession()}
             starting={starting}
             connected={connected}
-            sidebarOpen={sidebarOpen}
           />
         ) : (
           <>
-            <header className={'flex h-[60px] min-w-0 shrink-0 items-center gap-3 border-b border-hairline bg-canvas px-5 ' + (sidebarOpen ? '' : 'pl-14')}>
+            <header className="flex h-[60px] min-w-0 shrink-0 items-center gap-3 border-b border-hairline bg-canvas px-5">
               <h1 className="truncate font-display text-title-lg text-ink">{state.topic}</h1>
               <span
                 className={'h-2 w-2 shrink-0 rounded-pill ' + (connected ? 'bg-success' : 'bg-fg-soft/50')}
@@ -394,13 +380,14 @@ interface EmptyStateProps {
   onStart: () => void;
   starting: boolean;
   connected: boolean;
-  sidebarOpen: boolean;
 }
 
-function EmptyState({ topic, setTopic, onStart, starting, connected, sidebarOpen }: EmptyStateProps) {
+function EmptyState({ topic, setTopic, onStart, starting, connected }: EmptyStateProps) {
+  const canStart = connected && !starting && topic.trim().length > 0;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6">
-      <div className={'w-full max-w-2xl ' + (sidebarOpen ? '' : 'pt-6')}>
+      <div className="w-full max-w-2xl">
         <div className="mb-8 flex flex-col items-center text-center">
           <SharpenerGlyph size={56} className="mb-5 text-brand" />
           <h1 className="font-display text-display-sm text-ink sm:text-display-md">
@@ -411,22 +398,32 @@ function EmptyState({ topic, setTopic, onStart, starting, connected, sidebarOpen
           </p>
         </div>
 
-        <div className="flex flex-col gap-2.5 rounded-xl border border-hairline bg-white p-2.5 transition-colors focus-within:border-brand/50 sm:flex-row sm:items-center">
+        <div className="relative rounded-[18px] border border-hairline bg-white p-2 transition-all duration-200 ease-out focus-within:border-brand/40 focus-within:ring-2 focus-within:ring-brand/15 motion-reduce:transition-none">
           <input
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && onStart()}
+            onKeyDown={(e) => e.key === 'Enter' && canStart && onStart()}
             placeholder="Teach me Binary Search from scratch…"
             autoFocus
-            className="h-12 flex-1 rounded-xl bg-transparent px-3 text-body-md text-ink placeholder:text-fg-soft focus:outline-none"
+            className="h-12 w-full rounded-[14px] bg-transparent pl-4 pr-14 text-body-md text-ink placeholder:text-fg-soft focus:outline-none"
           />
           <button
-            onClick={onStart}
-            disabled={starting || !connected || !topic.trim()}
-            className="group inline-flex h-12 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand px-6 text-button text-white transition-colors duration-150 hover:bg-brand-active disabled:bg-brand-disabled"
+            type="button"
+            onClick={() => canStart && onStart()}
+            aria-disabled={!canStart}
+            title={canStart ? 'Start lesson' : 'Type a topic to begin'}
+            className={
+              'absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-brand bg-brand text-white transition-all duration-200 ease-out motion-reduce:transition-none ' +
+              (canStart
+                ? 'cursor-pointer hover:bg-brand-active active:scale-95'
+                : 'cursor-not-allowed')
+            }
           >
-            {starting ? 'Starting…' : 'Start Learning'}
-            <span className="transition-transform duration-300 group-hover:translate-x-0.5">→</span>
+            {starting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            ) : (
+              <ArrowUp size={18} strokeWidth={2.25} />
+            )}
           </button>
         </div>
 
@@ -435,7 +432,7 @@ function EmptyState({ topic, setTopic, onStart, starting, connected, sidebarOpen
             <button
               key={s}
               onClick={() => setTopic(s)}
-              className="rounded-pill border border-hairline bg-surface-card px-4 py-2 text-body-sm text-body transition-colors hover:border-brand/40 hover:text-brand"
+              className="rounded-pill border border-hairline bg-surface-card px-4 py-2 text-body-sm text-body transition-colors duration-200 ease-out hover:border-brand/40 hover:text-brand motion-reduce:transition-none"
             >
               {s}
             </button>
