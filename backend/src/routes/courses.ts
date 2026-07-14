@@ -6,6 +6,11 @@ import {
   HttpError, listOwned, LOCAL_CREATOR, publishCourse, publishIssues, queryCatalog,
   unarchiveCourse, unpublishCourse, updateCourse,
 } from '../services/courseService.js';
+import {
+  generateTimeline,
+  getTimeline,
+  saveTimeline,
+} from '../services/timelineService.js';
 
 export const coursesRouter = Router();
 
@@ -115,3 +120,32 @@ coursesRouter.delete('/api/studio/courses/:id', (req, res) => {
     handle(res, err);
   }
 });
+
+// ---- Lesson timelines (the AI's teaching blueprint, edited in the Studio) ----
+
+coursesRouter.get('/api/studio/courses/:id/lessons/:lessonId/timeline', (req, res) => {
+  try {
+    res.json(getTimeline(req.params.id, creator(req).id, req.params.lessonId));
+  } catch (err) {
+    handle(res, err);
+  }
+});
+
+coursesRouter.put('/api/studio/courses/:id/lessons/:lessonId/timeline', (req, res) => {
+  try {
+    res.json(saveTimeline(req.params.id, creator(req).id, req.params.lessonId, req.body));
+  } catch (err) {
+    handle(res, err);
+  }
+});
+
+coursesRouter.post(
+  '/api/studio/courses/:id/lessons/:lessonId/timeline/generate',
+  async (req, res) => {
+    try {
+      res.json(await generateTimeline(req.params.id, creator(req).id, req.params.lessonId));
+    } catch (err) {
+      handle(res, err);
+    }
+  },
+);

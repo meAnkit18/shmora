@@ -1,3 +1,5 @@
+import type { LessonTimeline } from './timelineTypes.js';
+
 export type CourseStatus = 'draft' | 'published' | 'archived';
 export type CourseDifficulty = 'beginner' | 'intermediate' | 'advanced';
 
@@ -5,6 +7,8 @@ export interface CourseLesson {
   id: string;
   title: string;
   summary: string;
+  /** Creator-authored teaching blueprint for this lesson. */
+  timeline?: LessonTimeline;
 }
 
 export interface CourseSection {

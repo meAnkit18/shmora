@@ -8,6 +8,7 @@ import type {
 } from '../../../shared/types.js';
 import {
   createSession,
+  createScriptedSession,
   nextStep,
   interrupt,
   resumeSession,
@@ -37,9 +38,10 @@ function emitterFor(socket: TeacherSocket): TurnEmitter {
 export function registerSessionHandlers(socket: TeacherSocket): void {
   const emitter = emitterFor(socket);
 
-  socket.on('session:create', async ({ topic }: CreateSessionPayload) => {
+  socket.on('session:create', async ({ topic, courseId, lessonId }: CreateSessionPayload) => {
     try {
-      await createSession(topic, emitter);
+      if (courseId && lessonId) await createScriptedSession(courseId, lessonId, emitter);
+      else await createSession(topic, emitter);
     } catch (err) {
       emitError(socket, err);
     }

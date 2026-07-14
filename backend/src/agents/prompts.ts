@@ -1,4 +1,5 @@
 import type { Message, SessionState } from '../../../shared/types.js';
+import type { Course, CourseLesson } from '../../../shared/courseTypes.js';
 
 /** What the agent knows beyond the SessionState: recent transcript + board registry. */
 export interface PromptContext {
@@ -127,14 +128,20 @@ export function answerUserPrompt(
   state: SessionState,
   ctx: PromptContext,
   question: string,
+  upcomingScript?: string,
 ): string {
   const current = state.steps[state.currentStep] ?? 'the topic';
+  const upcoming = upcomingScript
+    ? `\nAfter your answer, the lesson resumes with this exact pre-scripted narration — make your
+final bridging sentence lead into it naturally, and do NOT repeat or paraphrase it:
+"${upcomingScript}"\n`
+    : '';
   return `Topic: ${state.topic}
 We were on step: "${current}".
 
 ${contextBlock(ctx)}
 
-Student's question: "${question}"
+Student's question: "${question}"${upcoming}
 Answer it, then bridge back to the lesson.`;
 }
 
@@ -157,4 +164,48 @@ Steps covered: ${JSON.stringify(state.steps)}
 ${contextBlock(ctx)}
 
 The lesson is over. Give the closing recap now.`;
+}
+
+// ---- Studio: drafting a lesson timeline (the creator's editable blueprint) ----
+
+export function timelineGenSystemPrompt(): string {
+  return `You are an expert instructional designer scripting a lesson for an AI whiteboard tutor.
+${VISUAL_CONTRACT}
+
+Output ONLY a JSON array of 3-6 scenes (no prose, no markdown fences). Each scene:
+{"title":string,"blocks":[{"script":string,"visuals":[commands]}]}
+Rules:
+- Scenes are the lesson's sections, in teaching order. Titles are short (2-5 words).
+- Each scene has 3-6 blocks. A block is ONE teaching beat: its "visuals" render (animated)
+  first, then "script" is spoken. Keep "script" to 1-2 natural spoken sentences.
+- Draw a little, say a little: do not dump a finished diagram and then lecture.
+- Reference only element ids created earlier in the SAME or the PREVIOUS scene (the board
+  auto-erases anything older).
+- Use inline {point:REF} / {highlight:REF} marks inside "script" (1-2 per block) so the
+  teacher's hand moves while speaking.`;
+}
+
+export function timelineGenUserPrompt(course: Course, lesson: CourseLesson): string {
+  const bp = course.blueprint;
+  const styleHints = [
+    bp.teachingStyles.length ? `Teaching styles: ${bp.teachingStyles.join(', ')}` : '',
+    `Explanation depth: ${bp.explanation.depth}`,
+    bp.explanation.useExamples ? 'Use concrete examples.' : '',
+    bp.explanation.useAnalogies ? 'Use analogies.' : '',
+    bp.board.useDiagrams ? 'Lean on diagrams (arrays/sequences).' : '',
+    `Board pacing: ${bp.board.pacing}. Board style: ${bp.board.style}.`,
+    bp.teachingInstructions ? `Creator instructions: ${bp.teachingInstructions}` : '',
+    bp.board.instructions ? `Board instructions: ${bp.board.instructions}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return `Course: ${course.title} (${course.difficulty})
+Course description: ${course.description || '(none)'}
+Lesson to script: "${lesson.title}"
+Lesson summary: ${lesson.summary || '(none)'}
+
+${styleHints}
+
+Draft the full scene/block timeline for this lesson now.`;
 }

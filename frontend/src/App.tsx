@@ -8,6 +8,7 @@ import { StudioDashboardPage } from './studio/StudioDashboardPage';
 import { StudioCoursesPage } from './studio/StudioCoursesPage';
 import { StudioPlaceholderPage } from './studio/StudioPlaceholderPage';
 import { CourseBuilderPage } from './studio/builder/CourseBuilderPage';
+import { TimelineEditorPage } from './studio/timeline/TimelineEditorPage';
 
 export default function App() {
   return (
@@ -43,6 +44,10 @@ export default function App() {
         </Route>
 
         <Route path="/studio/courses/:id/edit" element={<CourseBuilderPage />} />
+        <Route
+          path="/studio/courses/:id/lessons/:lessonId/timeline"
+          element={<TimelineEditorPage />}
+        />
       </Routes>
     </BrowserRouter>
   );

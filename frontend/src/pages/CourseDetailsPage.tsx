@@ -13,7 +13,14 @@ export function CourseDetailsPage() {
     if (!course) return;
     const first = course.sections[0]?.lessons[0];
     const topic = first ? `${course.title}: ${first.title}` : course.title;
-    navigate(`/session?topic=${encodeURIComponent(topic)}`);
+    const params = new URLSearchParams({ topic });
+    if (first) {
+      // The server replays the lesson's authored timeline when it exists,
+      // and falls back to the generative teacher when it doesn't.
+      params.set('courseId', course.id);
+      params.set('lessonId', first.id);
+    }
+    navigate(`/session?${params.toString()}`);
   };
 
   if (loading) {

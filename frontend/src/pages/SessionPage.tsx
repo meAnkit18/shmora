@@ -219,10 +219,16 @@ export function SessionPage() {
 
   const startSession = (override?: string) => {
     const t = (override ?? topic).trim();
-    if (!t || !socketRef.current) return;
+    const courseId = searchParams.get('courseId') ?? undefined;
+    const lessonId = searchParams.get('lessonId') ?? undefined;
+    const scripted = Boolean(courseId && lessonId);
+    if ((!t && !scripted) || !socketRef.current) return;
     setTopic(t);
     setStarting(true);
-    socketRef.current.emit('session:create', { topic: t });
+    socketRef.current.emit('session:create', {
+      topic: t,
+      ...(scripted ? { courseId, lessonId } : {}),
+    });
   };
 
   const newLesson = () => {

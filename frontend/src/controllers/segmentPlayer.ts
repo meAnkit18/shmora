@@ -103,6 +103,10 @@ export class SegmentPlayer {
         } else {
           await speech;
         }
+        if (seg.holdMs) {
+          // Creator-authored pause: let a diagram breathe before the next beat.
+          await new Promise((resolve) => setTimeout(resolve, seg.holdMs));
+        }
         this.deps.setSpokenText('');
       }
     } finally {

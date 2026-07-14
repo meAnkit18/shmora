@@ -7,7 +7,9 @@ import type {
   TurnRecord,
   VisualIntent,
 } from '../../../shared/types.js';
+import type { LessonTimeline } from '../../../shared/timelineTypes.js';
 import { sessionStore } from '../state/memoryStore.js';
+import { courseStore } from '../state/courseStore.js';
 import { addMessage, advanceStep, pause, resume, isLessonComplete } from './lessonFlow.js';
 import { Channel } from './channel.js';
 import {
@@ -45,6 +47,7 @@ interface Runtime {
   registry: { turnId: string; lines: string[] }[]; // per-turn element lines (only recent turns survive)
   currentAbort: AbortController | null; // abort handle of the in-flight turn
   prefetch: Prefetch | null;
+  script: LessonTimeline | null; // set for scripted sessions: the authored blueprint
   chain: Promise<unknown>; // single-flight op queue
   lastActive: number;
 }
@@ -157,6 +160,7 @@ function stamp(rt: Runtime, turn: TurnInfo, draft: SegmentDraft): Segment {
  * coordinates), prefetched content can never be spatially stale.
  */
 function startPrefetch(rt: Runtime): void {
+  if (rt.script) return; // scripted lessons replay authored blocks — nothing to prefetch
   const state = rt.state;
   const nextIdx = state.currentStep + 1;
   if (rt.prefetch || nextIdx >= state.steps.length) return;
@@ -223,6 +227,7 @@ export async function createSession(topic: string, emit: TurnEmitter): Promise<v
       registry: [],
       currentAbort: abort,
       prefetch: null,
+      script: null,
       chain: gate,
       lastActive: Date.now(),
     };
@@ -272,6 +277,97 @@ export async function createSession(topic: string, emit: TurnEmitter): Promise<v
   } finally {
     (releaseChain as (() => void) | null)?.();
   }
+}
+
+// ---- Scripted sessions: the creator-authored timeline is the teaching blueprint ----
+
+async function runScriptedTurn(rt: Runtime, emit: TurnEmitter): Promise<void> {
+  const scene = rt.script?.scenes[rt.state.currentStep];
+  const turn = makeTurn('teach', rt.state);
+  emit.turnStart(turn);
+  const spoken: string[] = [];
+  for (const block of scene?.blocks ?? []) {
+    const seg = stamp(rt, turn, {
+      id: block.id,
+      visuals: block.visuals,
+      speech: block.script,
+      ...(block.holdMs ? { holdMs: block.holdMs } : {}),
+    });
+    spoken.push(seg.speech);
+    emit.segment(seg);
+  }
+  if (spoken.length) addMessage(rt.state, 'teacher', spoken.join(' '));
+  sessionStore.set(rt.state);
+  emit.turnEnd(turn, rt.state);
+}
+
+function upcomingScript(rt: Runtime): string | undefined {
+  const scenes = rt.script?.scenes;
+  if (!scenes) return undefined;
+  const lines: string[] = [];
+  const current = scenes[rt.state.currentStep];
+  if (current) for (const b of current.blocks) lines.push(b.script);
+  const next = scenes[rt.state.currentStep + 1];
+  if (next?.blocks[0]) lines.push(next.blocks[0].script);
+  const joined = lines.slice(0, 4).join(' ').trim();
+  return joined || undefined;
+}
+
+export async function createScriptedSession(
+  courseId: string,
+  lessonId: string,
+  emit: TurnEmitter,
+): Promise<void> {
+  const course = courseStore.get(courseId) ?? courseStore.getBySlug(courseId);
+  if (!course) throw new Error('Course not found.');
+
+  let lessonTitle = '';
+  let timeline: LessonTimeline | undefined;
+  for (const section of course.sections) {
+    const lesson = section.lessons.find((l) => l.id === lessonId);
+    if (lesson) {
+      lessonTitle = lesson.title || 'Untitled lesson';
+      timeline = lesson.timeline;
+      break;
+    }
+  }
+  if (!lessonTitle) throw new Error('Lesson not found in this course.');
+
+  const scenes = timeline?.scenes.filter((s) => s.blocks.length > 0) ?? [];
+  if (scenes.length === 0) {
+    await createSession(`${course.title}: ${lessonTitle}`, emit);
+    return;
+  }
+
+  const stepTitles = scenes.map((s, i) => s.title.trim() || `Part ${i + 1}`);
+  const state: SessionState = {
+    sessionId: randomUUID(),
+    topic: `${course.title} — ${lessonTitle}`,
+    steps: stepTitles,
+    currentStep: 0,
+    completedSteps: [],
+    pendingSteps: stepTitles.slice(1),
+    paused: false,
+    completed: false,
+    scripted: true,
+    conversationHistory: [],
+  };
+  sessionStore.set(state);
+
+  const rt: Runtime = {
+    state,
+    seq: 0,
+    log: [],
+    registry: [],
+    currentAbort: null,
+    prefetch: null,
+    script: { version: 1, scenes, updatedAt: timeline?.updatedAt ?? Date.now() },
+    chain: Promise.resolve(),
+    lastActive: Date.now(),
+  };
+  runtimes.set(state.sessionId, rt);
+  emit.created(state);
+  await enqueue(rt, () => runScriptedTurn(rt, emit));
 }
 
 // ---- Teaching a step (consumes the prefetch channel if one exists) ----
@@ -382,7 +478,8 @@ export function nextStep(sessionId: string, emit: TurnEmitter): Promise<void> {
       emit.complete(rt.state);
       return;
     }
-    await runTeachTurn(rt, emit);
+    if (rt.script) await runScriptedTurn(rt, emit);
+    else await runTeachTurn(rt, emit);
   });
 }
 
@@ -415,14 +512,20 @@ export function interrupt(
     const spoken: string[] = [];
     let failed: unknown = null;
     try {
-      await answer(rt.state, promptContext(rt), question, {
-        signal: abort.signal,
-        onSegment: (d) => {
-          const seg = stamp(rt, turn, d);
-          spoken.push(seg.speech);
-          emit.segment(seg);
+      await answer(
+        rt.state,
+        promptContext(rt),
+        question,
+        {
+          signal: abort.signal,
+          onSegment: (d) => {
+            const seg = stamp(rt, turn, d);
+            spoken.push(seg.speech);
+            emit.segment(seg);
+          },
         },
-      });
+        upcomingScript(rt),
+      );
     } catch (err) {
       if (!isAbortError(err)) failed = err;
     }

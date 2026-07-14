@@ -40,6 +40,7 @@ export interface Segment {
   seq: number; // per-session monotonically increasing (ordering + replay)
   visuals: VisualIntent[]; // rendered FIRST
   speech: string; // spoken only AFTER visuals are painted
+  holdMs?: number; // authored pause after the speech finishes (scripted lessons)
 }
 
 /** One turn plus every segment it produced — the unit of board replay on resume. */
@@ -65,12 +66,16 @@ export interface SessionState {
   paused: boolean;
   pausedReason?: string;
   completed: boolean; // true after the closing turn has run
+  scripted?: boolean; // true when the lesson follows a creator-authored timeline
   conversationHistory: Message[];
 }
 
 // ---- Socket payloads (client -> server) ----
 export interface CreateSessionPayload {
   topic: string;
+  /** When both are set, the session replays the lesson's authored timeline. */
+  courseId?: string;
+  lessonId?: string;
 }
 export interface NextStepPayload {
   sessionId: string;

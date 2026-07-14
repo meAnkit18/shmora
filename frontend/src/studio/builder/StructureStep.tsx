@@ -1,5 +1,6 @@
+import { Link } from 'react-router-dom';
 import { randomId } from './id';
-import { ChevronDown, ChevronUp, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clapperboard, GripVertical, Plus, Trash2 } from 'lucide-react';
 import type { Course, CourseDraftPatch, CourseSection } from '@shared/courseTypes';
 import { TextInput } from './fields';
 
@@ -89,6 +90,17 @@ export function StructureStep({ course, update }: Props) {
                       }
                       placeholder="One-line summary (guides the AI's lesson plan)"
                     />
+                    <Link
+                      to={`/studio/courses/${course.id}/lessons/${lesson.id}/timeline`}
+                      className="mt-0.5 inline-flex items-center gap-1.5 self-start text-caption text-brand hover:underline"
+                    >
+                      <Clapperboard size={13} />
+                      {lesson.timeline?.scenes.length
+                        ? `Edit timeline · ${lesson.timeline.scenes.length} scene${
+                            lesson.timeline.scenes.length === 1 ? '' : 's'
+                          }`
+                        : 'Design lesson timeline'}
+                    </Link>
                   </div>
                   <ReorderButtons
                     onUp={() => patchSection(si, { lessons: move(section.lessons, li, li - 1) })}

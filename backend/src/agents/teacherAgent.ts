@@ -142,10 +142,11 @@ export function answer(
   ctx: PromptContext,
   question: string,
   opts: GenOptions,
+  upcomingScript?: string,
 ): Promise<number> {
   return streamSegments({
     system: answerSystemPrompt(),
-    user: answerUserPrompt(state, ctx, question),
+    user: answerUserPrompt(state, ctx, question, upcomingScript),
     signal: opts.signal,
     onSegment: opts.onSegment,
   });
