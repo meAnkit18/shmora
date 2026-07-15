@@ -177,7 +177,8 @@ export function SessionPage() {
         if (player.idle) maybeAdvance();
       } else if (kind === 'answer') {
         interruptingRef.current = false;
-        player.endInterruption(); // resume stashed lesson segments
+        const restore = canvasRef.current?.endAnswer() ?? Promise.resolve();
+        void restore.then(() => player.endInterruption());
       } else if (kind === 'closing') {
         stepDoneRef.current = false;
       }

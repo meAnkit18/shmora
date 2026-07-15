@@ -95,7 +95,7 @@ export class SegmentPlayer {
         const seg = this.queue.shift()!;
         await this.render(seg); // instant no-op if prerendered during the last speech
         this.deps.setSpokenText(seg.speech); // arm echo guard
-        const speech = this.deps.speak(seg.speech);
+        const speech = seg.speech.trim() ? this.deps.speak(seg.speech) : Promise.resolve();
         // Overlap: draw the NEXT segment's visuals while this one is spoken.
         const next: Segment | undefined = this.queue[0];
         if (next) {
@@ -103,9 +103,9 @@ export class SegmentPlayer {
         } else {
           await speech;
         }
-        if (seg.holdMs) {
-          // Creator-authored pause: let a diagram breathe before the next beat.
-          await new Promise((resolve) => setTimeout(resolve, seg.holdMs));
+        const pauseMs = seg.holdMs ?? (seg.speech.trim() ? 0 : 900);
+        if (pauseMs) {
+          await new Promise((resolve) => setTimeout(resolve, pauseMs));
         }
         this.deps.setSpokenText('');
       }

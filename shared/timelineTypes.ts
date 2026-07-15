@@ -1,26 +1,31 @@
 import type { VisualIntent } from './types.js';
+import type { PointerSpec, SceneCanvas, SceneTransition } from './canvasTypes.js';
 
 export interface TimelineBlock {
   id: string;
   script: string;
   visuals: VisualIntent[];
   holdMs?: number;
+  reveal?: string[];
+  pointer?: PointerSpec;
 }
 
 export interface TimelineScene {
   id: string;
   title: string;
   blocks: TimelineBlock[];
+  canvas?: SceneCanvas;
+  transition?: SceneTransition;
 }
 
 export interface LessonTimeline {
-  version: 1;
+  version: 1 | 2;
   scenes: TimelineScene[];
   updatedAt: number;
 }
 
 export function emptyTimeline(): LessonTimeline {
-  return { version: 1, scenes: [], updatedAt: 0 };
+  return { version: 2, scenes: [], updatedAt: 0 };
 }
 
 const WORDS_PER_MINUTE = 150;
@@ -38,7 +43,12 @@ export function estimateBlockMs(block: TimelineBlock): number {
   const speechMs = (words / WORDS_PER_MINUTE) * 60_000;
   return Math.max(
     MIN_BLOCK_MS,
-    Math.round(speechMs + block.visuals.length * VISUAL_MS + (block.holdMs ?? 0)),
+    Math.round(
+      speechMs +
+        block.visuals.length * VISUAL_MS +
+        (block.reveal?.length ?? 0) * 600 +
+        (block.holdMs ?? 0),
+    ),
   );
 }
 

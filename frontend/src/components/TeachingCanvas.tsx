@@ -4,21 +4,18 @@ import '@excalidraw/excalidraw/index.css';
 import type { Segment, TurnInfo, TurnRecord } from '@shared/types';
 import type { GestureAction } from '../lib/speechMarks';
 import { BoardEngine, type ExcalidrawAPI } from '../canvas/layoutEngine';
+import { CanvasDirector, type DirectorAPI } from '../canvas/canvasDirector';
 
 export interface CanvasHandle {
-  /** Open a new frame for a turn (teach step / question / recap). */
   beginTurn: (turn: TurnInfo) => void;
-  /** Render a segment's visuals progressively; resolve once the drawing finishes. */
   execute: (segment: Segment) => Promise<void>;
-  /** Fire a mid-speech gesture (from an inline {point:ref} mark). */
   gesture: (action: GestureAction, ref: string) => void;
-  /** Replay a whole session's visuals silently (resume after refresh). */
   hydrate: (log: TurnRecord[]) => Promise<void>;
+  endAnswer: () => Promise<void>;
   clear: () => void;
   isReady: () => boolean;
 }
 
-/** Wait for two animation frames — a reliable "visuals are painted" signal. */
 function nextPaint(): Promise<void> {
   return new Promise((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -38,35 +35,103 @@ function frameTitle(turn: TurnInfo): string | null {
 
 export const TeachingCanvas = forwardRef<CanvasHandle>((_props, ref) => {
   const engineRef = useRef<BoardEngine>(new BoardEngine());
+  const directorRef = useRef<CanvasDirector>(new CanvasDirector());
+  const modeRef = useRef<'engine' | 'canvas'>('engine');
+  const turnRef = useRef<TurnInfo | null>(null);
+  const frameOpenedRef = useRef<string | null>(null);
+
+  const toCanvasMode = () => {
+    if (modeRef.current === 'canvas') return;
+    engineRef.current.reset();
+    directorRef.current.claim();
+    modeRef.current = 'canvas';
+  };
+
+  const toEngineMode = () => {
+    if (modeRef.current === 'engine') return;
+    directorRef.current.clear();
+    modeRef.current = 'engine';
+  };
+
+  const ensureFrame = (turn: TurnInfo | null) => {
+    if (!turn || frameOpenedRef.current === turn.turnId) return;
+    frameOpenedRef.current = turn.turnId;
+    engineRef.current.beginFrame(frameTitle(turn));
+  };
 
   useImperativeHandle(ref, () => ({
     isReady: () => engineRef.current.ready,
-    clear: () => engineRef.current.reset(),
+    clear: () => {
+      directorRef.current.clear();
+      engineRef.current.reset();
+      modeRef.current = 'engine';
+      frameOpenedRef.current = null;
+      turnRef.current = null;
+    },
     beginTurn: (turn: TurnInfo) => {
-      engineRef.current.beginFrame(frameTitle(turn));
+      turnRef.current = turn;
+      if (modeRef.current === 'canvas' && turn.kind === 'answer') {
+        directorRef.current.beginAnswer();
+      }
     },
     execute: async (segment: Segment) => {
       const engine = engineRef.current;
       if (!engine.ready) return;
-      engine.focusActiveFrame(); // look at the board before drawing starts
-      await engine.applyAnimated(segment.visuals); // progressive drawing + pointer glides
-      engine.focusActiveFrame(); // re-fit: the frame may have grown
+
+      if (segment.canvas) {
+        toCanvasMode();
+        await directorRef.current.applyBeat(segment.canvas);
+        await nextPaint();
+        return;
+      }
+
+      if (modeRef.current === 'canvas') {
+        await directorRef.current.renderIntents(segment.visuals);
+        await nextPaint();
+        return;
+      }
+
+      ensureFrame(turnRef.current);
+      engine.focusActiveFrame();
+      await engine.applyAnimated(segment.visuals);
+      engine.focusActiveFrame();
       await nextPaint();
     },
     gesture: (action: GestureAction, ref2: string) => {
-      engineRef.current.gesture(action, ref2);
+      if (modeRef.current === 'canvas') directorRef.current.gesture(action, ref2);
+      else engineRef.current.gesture(action, ref2);
+    },
+    endAnswer: async () => {
+      if (modeRef.current === 'canvas') await directorRef.current.endAnswer();
     },
     hydrate: async (log: TurnRecord[]) => {
       const engine = engineRef.current;
+      const director = directorRef.current;
       if (!engine.ready) return;
+      director.clear();
       engine.reset();
+      modeRef.current = 'engine';
+      frameOpenedRef.current = null;
+
       for (const record of log) {
+        const canvasSegs = record.segments.filter((s) => s.canvas);
+        if (canvasSegs.length) {
+          toCanvasMode();
+          for (const seg of canvasSegs) director.applyBeatInstant(seg.canvas!);
+          continue;
+        }
+        if (modeRef.current === 'canvas' as any) {
+          if (record.turn.kind !== 'teach') continue;
+          toEngineMode();
+        }
         engine.beginFrame(frameTitle(record.turn));
         for (const segment of record.segments) {
-          engine.apply(segment.visuals); // instant, silent replay
+          engine.apply(segment.visuals);
         }
       }
-      engine.focusActiveFrame();
+
+      if (modeRef.current === 'canvas' as any) await director.settle();
+      else engine.focusActiveFrame();
       await nextPaint();
     },
   }));
@@ -76,7 +141,7 @@ export const TeachingCanvas = forwardRef<CanvasHandle>((_props, ref) => {
       <Excalidraw
         excalidrawAPI={(api) => {
           engineRef.current.setApi(api as unknown as ExcalidrawAPI);
-          // DEV-only verification hook (stripped from prod builds).
+          directorRef.current.setApi(api as unknown as DirectorAPI);
           if (import.meta.env.DEV) {
             (window as unknown as { __getShapeCount?: () => number }).__getShapeCount = () =>
               (api as unknown as ExcalidrawAPI).getSceneElements().length;

@@ -7,7 +7,13 @@ import type {
   TurnRecord,
   VisualIntent,
 } from '../../../shared/types.js';
-import type { LessonTimeline } from '../../../shared/timelineTypes.js';
+import type {
+  LessonTimeline,
+  TimelineBlock,
+  TimelineScene,
+} from '../../../shared/timelineTypes.js';
+import type { CanvasBeat, SceneCanvas } from '../../../shared/canvasTypes.js';
+import { collectHidden, elementLabel } from '../../../shared/canvasTypes.js';
 import { sessionStore } from '../state/memoryStore.js';
 import { courseStore } from '../state/courseStore.js';
 import { addMessage, advanceStep, pause, resume, isLessonComplete } from './lessonFlow.js';
@@ -281,21 +287,68 @@ export async function createSession(topic: string, emit: TurnEmitter): Promise<v
 
 // ---- Scripted sessions: the creator-authored timeline is the teaching blueprint ----
 
+function canvasInventoryLines(canvas: SceneCanvas): string[] {
+  const lines: string[] = [];
+  for (const el of canvas.elements) {
+    const label = elementLabel(el);
+    if (!label) continue;
+    lines.push(`${el.id} — on the prepared slide (${String(el.type ?? 'element')}): "${label}"`);
+    if (lines.length >= 24) break;
+  }
+  return lines;
+}
+
 async function runScriptedTurn(rt: Runtime, emit: TurnEmitter): Promise<void> {
-  const scene = rt.script?.scenes[rt.state.currentStep];
+  const scene: TimelineScene | undefined = rt.script?.scenes[rt.state.currentStep];
   const turn = makeTurn('teach', rt.state);
   emit.turnStart(turn);
   const spoken: string[] = [];
-  for (const block of scene?.blocks ?? []) {
-    const seg = stamp(rt, turn, {
-      id: block.id,
-      visuals: block.visuals,
-      speech: block.script,
-      ...(block.holdMs ? { holdMs: block.holdMs } : {}),
+
+  const canvas = scene?.canvas;
+  if (scene && canvas && canvas.elements.length) {
+    const transition = scene.transition ?? 'cut';
+    const hidden = collectHidden(scene.blocks);
+    const blocks: TimelineBlock[] = scene.blocks.length
+      ? scene.blocks
+      : [{ id: `${scene.id}-show`, script: '', visuals: [] }];
+    blocks.forEach((block, i) => {
+      const beat: CanvasBeat = {
+        sceneId: scene.id,
+        sceneStart: i === 0,
+        transition,
+        ...(i === 0
+          ? { elements: canvas.elements, files: canvas.files, initialHidden: hidden }
+          : {}),
+        reveal: block.reveal ?? [],
+        ...(block.pointer ? { pointer: block.pointer } : {}),
+      };
+      const seg = stamp(rt, turn, {
+        id: block.id,
+        visuals: [],
+        speech: block.script,
+        canvas: beat,
+        ...(block.holdMs ? { holdMs: block.holdMs } : {}),
+      });
+      if (seg.speech.trim()) spoken.push(seg.speech);
+      emit.segment(seg);
     });
-    spoken.push(seg.speech);
-    emit.segment(seg);
+    const bucket = rt.registry[rt.registry.length - 1];
+    if (bucket && bucket.turnId === turn.turnId) {
+      bucket.lines.push(...canvasInventoryLines(canvas));
+    }
+  } else {
+    for (const block of scene?.blocks ?? []) {
+      const seg = stamp(rt, turn, {
+        id: block.id,
+        visuals: block.visuals,
+        speech: block.script,
+        ...(block.holdMs ? { holdMs: block.holdMs } : {}),
+      });
+      spoken.push(seg.speech);
+      emit.segment(seg);
+    }
   }
+
   if (spoken.length) addMessage(rt.state, 'teacher', spoken.join(' '));
   sessionStore.set(rt.state);
   emit.turnEnd(turn, rt.state);
@@ -333,7 +386,10 @@ export async function createScriptedSession(
   }
   if (!lessonTitle) throw new Error('Lesson not found in this course.');
 
-  const scenes = timeline?.scenes.filter((s) => s.blocks.length > 0) ?? [];
+  const scenes =
+    timeline?.scenes.filter(
+      (s) => s.blocks.length > 0 || (s.canvas?.elements.length ?? 0) > 0,
+    ) ?? [];
   if (scenes.length === 0) {
     await createSession(`${course.title}: ${lessonTitle}`, emit);
     return;
@@ -361,7 +417,11 @@ export async function createScriptedSession(
     registry: [],
     currentAbort: null,
     prefetch: null,
-    script: { version: 1, scenes, updatedAt: timeline?.updatedAt ?? Date.now() },
+    script: {
+      version: timeline?.version ?? 1,
+      scenes,
+      updatedAt: timeline?.updatedAt ?? Date.now(),
+    },
     chain: Promise.resolve(),
     lastActive: Date.now(),
   };

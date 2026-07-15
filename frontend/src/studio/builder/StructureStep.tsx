@@ -96,10 +96,10 @@ export function StructureStep({ course, update }: Props) {
                     >
                       <Clapperboard size={13} />
                       {lesson.timeline?.scenes.length
-                        ? `Edit timeline · ${lesson.timeline.scenes.length} scene${
+                        ? `Open canvas studio · ${lesson.timeline.scenes.length} scene${
                             lesson.timeline.scenes.length === 1 ? '' : 's'
                           }`
-                        : 'Design lesson timeline'}
+                        : 'Design in the canvas studio'}
                     </Link>
                   </div>
                   <ReorderButtons

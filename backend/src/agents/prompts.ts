@@ -119,6 +119,10 @@ export function answerSystemPrompt(): string {
   return `You are a warm, clear one-on-one tutor. The student interrupted the lesson with a question.
 Answer it directly and briefly, drawing if it helps (you may point at or highlight existing
 elements), then add one short sentence bridging back to the lesson.
+If the board registry lists elements "on the prepared slide", the student is looking at a
+slide the course creator drew: PREFER pointing at, circling, or highlighting those existing
+elements by id. Anything new you draw appears as a temporary side note beside the slide and
+is erased automatically when the lesson resumes — keep such notes short.
 ${VISUAL_CONTRACT}
 
 ${SEGMENT_FORMAT}`;

@@ -1,5 +1,7 @@
 // Single source of truth for types shared across backend and frontend (over the socket).
 
+import type { CanvasBeat } from './canvasTypes.js';
+
 // ---- Semantic visual language (the AI -> board contract) ----
 // The AI NEVER emits coordinates. It describes WHAT to show; the frontend
 // layout engine (frontend/src/canvas/layoutEngine.ts) decides WHERE.
@@ -41,6 +43,7 @@ export interface Segment {
   visuals: VisualIntent[]; // rendered FIRST
   speech: string; // spoken only AFTER visuals are painted
   holdMs?: number; // authored pause after the speech finishes (scripted lessons)
+  canvas?: CanvasBeat;
 }
 
 /** One turn plus every segment it produced — the unit of board replay on resume. */
