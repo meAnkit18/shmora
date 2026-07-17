@@ -1,0 +1,30 @@
+# Local / self-hosted stack: backend (Node) + frontend (nginx).
+# Copy .env.docker.example to .env and set AI_API_KEY, then: docker compose up --build
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      PORT: 3001
+      AI_API_KEY: ${AI_API_KEY:?set AI_API_KEY in .env}
+      AI_BASE_URL: ${AI_BASE_URL:-https://opencode.ai/zen/v1}
+      AI_MODEL: ${AI_MODEL:-north-mini-code-free}
+      # The browser reaches the frontend here, so CORS must allow this origin.
+      CLIENT_ORIGIN: http://localhost:8080
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # Baked into the bundle at build time — where the browser calls the API.
+        VITE_SERVER_URL: http://localhost:3001
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

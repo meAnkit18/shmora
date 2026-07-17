@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.vite
+**/*.tsbuildinfo
+.git
+.github
+*.log
+.env
+.env.*
+docs
+PRD
+resorces
