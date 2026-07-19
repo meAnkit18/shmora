@@ -2,7 +2,6 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-// Load the repo-root .env regardless of the process working directory.
 const here = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(here, '../../.env') });
 
@@ -21,5 +20,13 @@ export const config = {
     baseUrl: process.env.AI_BASE_URL ?? 'https://opencode.ai/zen/v1',
     apiKey: required('AI_API_KEY'),
     model: process.env.AI_MODEL ?? 'north-mini-code-free',
+  },
+  mongo: {
+    uri: required('MONGODB_URI'),
+  },
+  firebase: {
+    projectId: required('FIREBASE_PROJECT_ID'),
+    clientEmail: required('FIREBASE_CLIENT_EMAIL'),
+    privateKey: required('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n'),
   },
 };

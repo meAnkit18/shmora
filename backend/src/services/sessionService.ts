@@ -371,7 +371,8 @@ export async function createScriptedSession(
   lessonId: string,
   emit: TurnEmitter,
 ): Promise<void> {
-  const course = courseStore.get(courseId) ?? courseStore.getBySlug(courseId);
+  const course =
+    (await courseStore.get(courseId)) ?? (await courseStore.getBySlug(courseId));
   if (!course) throw new Error('Course not found.');
 
   let lessonTitle = '';

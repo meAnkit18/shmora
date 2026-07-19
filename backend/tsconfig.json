@@ -9,8 +9,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "noEmit": true,
-    "types": ["node"]
+    "noEmit": true
   },
   "include": ["src/**/*", "../shared/**/*"]
 }

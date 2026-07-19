@@ -1,3 +1,5 @@
+import { auth } from './firebase';
+
 const BASE = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
 
 export class ApiError extends Error {
@@ -6,10 +8,25 @@ export class ApiError extends Error {
   }
 }
 
+async function authHeader(): Promise<Record<string, string>> {
+  const user = auth.currentUser;
+  if (!user) return {};
+  try {
+    const token = await user.getIdToken();
+    return { Authorization: `Bearer ${token}` };
+  } catch {
+    return {};
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await authHeader()),
+      ...(init?.headers as Record<string, string> | undefined),
+    },
   });
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

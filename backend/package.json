@@ -9,12 +9,15 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "try:ai": "tsx scripts/tryAi.ts",
-    "try:flow": "tsx scripts/tryFlow.ts"
+    "try:flow": "tsx scripts/tryFlow.ts",
+    "migrate:mongo": "tsx scripts/migrateCoursesToMongo.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
+    "firebase-admin": "^14.2.0",
+    "mongoose": "^9.7.4",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

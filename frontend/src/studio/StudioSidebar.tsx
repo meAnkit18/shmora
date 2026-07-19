@@ -5,6 +5,8 @@ import {
 import { useState } from 'react';
 import { createCourseDraft } from '../features/courses/api';
 import { SharpenerGlyph } from '../components/SharpenerGlyph';
+import { signOut } from '../lib/firebase';
+import { useAuth } from '../lib/AuthContext';
 
 const NAV = [
   { to: '/studio', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -16,6 +18,7 @@ const NAV = [
 export function StudioSidebar() {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
+  const { user } = useAuth();
 
   const newCourse = async () => {
     if (creating) return;
@@ -77,6 +80,20 @@ export function StudioSidebar() {
         <GraduationCap size={18} className="shrink-0" />
         <span className="hidden md:inline">Back to learning</span>
       </Link>
+
+      <div className="border-t border-hairline p-3 text-sm">
+        <p className="mb-2 truncate text-fg-muted">{user?.displayName ?? user?.email}</p>
+        <button
+          type="button"
+          onClick={async () => {
+            await signOut();
+            navigate('/');
+          }}
+          className="w-full rounded-lg border border-hairline px-3 py-1.5 text-left text-nav-link hover:bg-surface-soft"
+        >
+          Sign out
+        </button>
+      </div>
     </aside>
   );
 }

@@ -1,74 +1,42 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import type { Course } from '../../../shared/courseTypes.js';
+import { CourseModel } from '../models/CourseModel.js';
 
 export interface CourseStore {
-  all(): Course[];
-  get(id: string): Course | undefined;
-  getBySlug(slug: string): Course | undefined;
-  set(course: Course): void;
-  delete(id: string): void;
+  all(): Promise<Course[]>;
+  get(id: string): Promise<Course | undefined>;
+  getBySlug(slug: string): Promise<Course | undefined>;
+  set(course: Course): Promise<void>;
+  delete(id: string): Promise<void>;
 }
 
-const here = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = resolve(here, '../../data');
-const DATA_FILE = resolve(DATA_DIR, 'courses.json');
-const FLUSH_DELAY_MS = 400;
+function clean(doc: Record<string, unknown> | null): Course | undefined {
+  if (!doc) return undefined;
+  const { _id, ...rest } = doc;
+  return rest as unknown as Course;
+}
 
-class JsonFileCourseStore implements CourseStore {
-  private courses = new Map<string, Course>();
-  private flushTimer: NodeJS.Timeout | null = null;
-
-  constructor() {
-    try {
-      if (existsSync(DATA_FILE)) {
-        const raw = JSON.parse(readFileSync(DATA_FILE, 'utf8'));
-        if (Array.isArray(raw)) {
-          for (const c of raw as Course[]) this.courses.set(c.id, c);
-        }
-      }
-    } catch (err) {
-      console.error('[courseStore] failed to load data file, starting empty:', err);
-    }
+class MongoCourseStore implements CourseStore {
+  async all(): Promise<Course[]> {
+    const docs = await CourseModel.find().lean();
+    return docs.map((d) => clean(d as unknown as Record<string, unknown>)!) as Course[];
   }
 
-  all(): Course[] {
-    return [...this.courses.values()];
+  async get(id: string): Promise<Course | undefined> {
+    return clean(await CourseModel.findOne({ id }).lean() as unknown as Record<string, unknown> | null);
   }
 
-  get(id: string): Course | undefined {
-    return this.courses.get(id);
+  async getBySlug(slug: string): Promise<Course | undefined> {
+    if (!slug) return undefined;
+    return clean(await CourseModel.findOne({ slug }).lean() as unknown as Record<string, unknown> | null);
   }
 
-  getBySlug(slug: string): Course | undefined {
-    for (const c of this.courses.values()) if (c.slug === slug) return c;
-    return undefined;
+  async set(course: Course): Promise<void> {
+    await CourseModel.replaceOne({ id: course.id }, course as unknown as Record<string, unknown>, { upsert: true });
   }
 
-  set(course: Course): void {
-    this.courses.set(course.id, course);
-    this.scheduleFlush();
-  }
-
-  delete(id: string): void {
-    this.courses.delete(id);
-    this.scheduleFlush();
-  }
-
-  private scheduleFlush(): void {
-    if (this.flushTimer) return;
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = null;
-      try {
-        mkdirSync(DATA_DIR, { recursive: true });
-        writeFileSync(DATA_FILE, JSON.stringify(this.all(), null, 2));
-      } catch (err) {
-        console.error('[courseStore] flush failed:', err);
-      }
-    }, FLUSH_DELAY_MS);
-    this.flushTimer.unref?.();
+  async delete(id: string): Promise<void> {
+    await CourseModel.deleteOne({ id });
   }
 }
 
-export const courseStore: CourseStore = new JsonFileCourseStore();
+export const courseStore: CourseStore = new MongoCourseStore();

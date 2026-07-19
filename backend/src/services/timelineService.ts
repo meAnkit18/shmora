@@ -131,23 +131,23 @@ export function sanitizeTimeline(raw: unknown): LessonTimeline {
   return { version: 2, scenes, updatedAt: Date.now() };
 }
 
-export function getTimeline(
+export async function getTimeline(
   courseId: string,
   creatorId: string,
   lessonId: string,
-): LessonTimeline {
-  const course = getOwned(courseId, creatorId);
+): Promise<LessonTimeline> {
+  const course = await getOwned(courseId, creatorId);
   const lesson = findLesson(course, lessonId);
   return lesson.timeline ?? { version: 2, scenes: [], updatedAt: 0 };
 }
 
-export function saveTimeline(
+export async function saveTimeline(
   courseId: string,
   creatorId: string,
   lessonId: string,
   raw: unknown,
-): LessonTimeline {
-  const course = getOwned(courseId, creatorId);
+): Promise<LessonTimeline> {
+  const course = await getOwned(courseId, creatorId);
   if (course.status === 'archived') {
     throw new HttpError(409, 'Unarchive the course to edit it.');
   }
@@ -155,7 +155,7 @@ export function saveTimeline(
   const timeline = sanitizeTimeline(raw);
   lesson.timeline = timeline;
   course.updatedAt = Date.now();
-  courseStore.set(course);
+  await courseStore.set(course);
   return timeline;
 }
 
@@ -164,7 +164,7 @@ export async function generateTimeline(
   creatorId: string,
   lessonId: string,
 ): Promise<LessonTimeline> {
-  const course = getOwned(courseId, creatorId);
+  const course = await getOwned(courseId, creatorId);
   const lesson = findLesson(course, lessonId);
 
   const reply = await chat(

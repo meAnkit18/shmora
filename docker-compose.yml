@@ -1,6 +1,14 @@
-# Local / self-hosted stack: backend (Node) + frontend (nginx).
-# Copy .env.docker.example to .env and set AI_API_KEY, then: docker compose up --build
+# Local / self-hosted stack: mongo + backend (Node) + frontend (nginx).
+# Copy .env.docker.example to .env and set the secrets, then: docker compose up --build
 services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -10,10 +18,15 @@ services:
       AI_API_KEY: ${AI_API_KEY:?set AI_API_KEY in .env}
       AI_BASE_URL: ${AI_BASE_URL:-https://opencode.ai/zen/v1}
       AI_MODEL: ${AI_MODEL:-north-mini-code-free}
-      # The browser reaches the frontend here, so CORS must allow this origin.
+      MONGODB_URI: mongodb://mongo:27017/shmora
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?set FIREBASE_PROJECT_ID in .env}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:?set FIREBASE_CLIENT_EMAIL in .env}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:?set FIREBASE_PRIVATE_KEY in .env}
       CLIENT_ORIGIN: http://localhost:8080
     ports:
       - "3001:3001"
+    depends_on:
+      - mongo
     restart: unless-stopped
 
   frontend:
@@ -21,10 +34,12 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        # Baked into the bundle at build time — where the browser calls the API.
         VITE_SERVER_URL: http://localhost:3001
     ports:
       - "8080:80"
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  mongo-data:

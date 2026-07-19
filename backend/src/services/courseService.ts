@@ -11,8 +11,6 @@ import type {
 } from '../../../shared/courseTypes.js';
 import { courseStore } from '../state/courseStore.js';
 
-export const LOCAL_CREATOR = { id: 'local-creator', name: 'You' };
-
 function assertOwner(course: Course, creatorId: string): void {
   if (course.creatorId !== creatorId) throw new HttpError(403, 'Not your course.');
 }
@@ -52,7 +50,7 @@ export function defaultBlueprint(): TeachingBlueprint {
   };
 }
 
-export function createDraft(creatorId: string, creatorName: string): Course {
+export async function createDraft(creatorId: string, creatorName: string): Promise<Course> {
   const now = Date.now();
   const course: Course = {
     id: randomUUID(),
@@ -77,7 +75,7 @@ export function createDraft(creatorId: string, creatorName: string): Course {
     createdAt: now,
     updatedAt: now,
   };
-  courseStore.set(course);
+  await courseStore.set(course);
   return course;
 }
 
@@ -87,8 +85,12 @@ const EDITABLE: (keyof CourseDraftPatch)[] = [
   'thumbnailSeed',
 ];
 
-export function updateCourse(id: string, creatorId: string, patch: CourseDraftPatch): Course {
-  const course = getOwned(id, creatorId);
+export async function updateCourse(
+  id: string,
+  creatorId: string,
+  patch: CourseDraftPatch,
+): Promise<Course> {
+  const course = await getOwned(id, creatorId);
   if (course.status === 'archived') throw new HttpError(409, 'Unarchive the course to edit it.');
   for (const key of EDITABLE) {
     if (key in patch) {
@@ -96,31 +98,34 @@ export function updateCourse(id: string, creatorId: string, patch: CourseDraftPa
     }
   }
   course.updatedAt = Date.now();
-  courseStore.set(course);
+  await courseStore.set(course);
   return course;
 }
 
-export function getOwned(id: string, creatorId: string): Course {
-  const course = courseStore.get(id);
+export async function getOwned(id: string, creatorId: string): Promise<Course> {
+  const course = await courseStore.get(id);
   if (!course) throw new HttpError(404, 'Course not found.');
   assertOwner(course, creatorId);
   return course;
 }
 
-export function listOwned(creatorId: string, status?: Course['status']): CourseSummary[] {
-  return courseStore
-    .all()
+export async function listOwned(
+  creatorId: string,
+  status?: Course['status'],
+): Promise<CourseSummary[]> {
+  const all = await courseStore.all();
+  return all
     .filter((c) => c.creatorId === creatorId && (!status || c.status === status))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .map(toSummary);
 }
 
-export function deleteCourse(id: string, creatorId: string): void {
-  const course = getOwned(id, creatorId);
+export async function deleteCourse(id: string, creatorId: string): Promise<void> {
+  const course = await getOwned(id, creatorId);
   if (course.status === 'published') {
     throw new HttpError(409, 'Unpublish the course before deleting it.');
   }
-  courseStore.delete(id);
+  await courseStore.delete(id);
 }
 
 export function publishIssues(course: Course): PublishIssue[] {
@@ -148,7 +153,7 @@ export function publishIssues(course: Course): PublishIssue[] {
   return issues;
 }
 
-function slugify(title: string): string {
+async function slugify(title: string): Promise<string> {
   const base = title.toLowerCase().trim()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
@@ -156,46 +161,46 @@ function slugify(title: string): string {
     .slice(0, 60) || 'course';
   let slug = base;
   let i = 2;
-  while (courseStore.getBySlug(slug)) slug = `${base}-${i++}`;
+  while (await courseStore.getBySlug(slug)) slug = `${base}-${i++}`;
   return slug;
 }
 
-export function publishCourse(id: string, creatorId: string): Course {
-  const course = getOwned(id, creatorId);
+export async function publishCourse(id: string, creatorId: string): Promise<Course> {
+  const course = await getOwned(id, creatorId);
   const issues = publishIssues(course);
   if (issues.length) {
     throw new HttpError(422, issues.map((i) => i.message).join(' '));
   }
-  if (!course.slug) course.slug = slugify(course.title);
+  if (!course.slug) course.slug = await slugify(course.title);
   course.status = 'published';
   course.version += 1;
   course.publishedAt = Date.now();
   course.updatedAt = Date.now();
-  courseStore.set(course);
+  await courseStore.set(course);
   return course;
 }
 
-export function unpublishCourse(id: string, creatorId: string): Course {
-  const course = getOwned(id, creatorId);
+export async function unpublishCourse(id: string, creatorId: string): Promise<Course> {
+  const course = await getOwned(id, creatorId);
   course.status = 'draft';
   course.updatedAt = Date.now();
-  courseStore.set(course);
+  await courseStore.set(course);
   return course;
 }
 
-export function archiveCourse(id: string, creatorId: string): Course {
-  const course = getOwned(id, creatorId);
+export async function archiveCourse(id: string, creatorId: string): Promise<Course> {
+  const course = await getOwned(id, creatorId);
   course.status = 'archived';
   course.updatedAt = Date.now();
-  courseStore.set(course);
+  await courseStore.set(course);
   return course;
 }
 
-export function unarchiveCourse(id: string, creatorId: string): Course {
-  const course = getOwned(id, creatorId);
+export async function unarchiveCourse(id: string, creatorId: string): Promise<Course> {
+  const course = await getOwned(id, creatorId);
   course.status = 'draft';
   course.updatedAt = Date.now();
-  courseStore.set(course);
+  await courseStore.set(course);
   return course;
 }
 
@@ -227,12 +232,13 @@ function trendingScore(c: Course): number {
   return c.stats.enrollments / Math.max(1, ageDays / 7 + 1);
 }
 
-export function queryCatalog(q: CatalogQuery): CatalogPage {
+export async function queryCatalog(q: CatalogQuery): Promise<CatalogPage> {
   const page = Math.max(1, q.page ?? 1);
   const pageSize = Math.min(48, Math.max(1, q.pageSize ?? 12));
   const needle = q.q?.trim().toLowerCase();
 
-  let items = courseStore.all().filter((c) => c.status === 'published');
+  const all = await courseStore.all();
+  let items = all.filter((c) => c.status === 'published');
   if (needle) {
     items = items.filter((c) =>
       [c.title, c.description, c.creatorName, ...c.tags]
@@ -262,8 +268,9 @@ export function queryCatalog(q: CatalogQuery): CatalogPage {
   };
 }
 
-export function getPublicCourse(idOrSlug: string, creatorId: string): Course {
-  const course = courseStore.get(idOrSlug) ?? courseStore.getBySlug(idOrSlug);
+export async function getPublicCourse(idOrSlug: string, creatorId: string): Promise<Course> {
+  const course =
+    (await courseStore.get(idOrSlug)) ?? (await courseStore.getBySlug(idOrSlug));
   if (!course) throw new HttpError(404, 'Course not found.');
   if (course.status !== 'published' && course.creatorId !== creatorId) {
     throw new HttpError(404, 'Course not found.');
@@ -271,16 +278,20 @@ export function getPublicCourse(idOrSlug: string, creatorId: string): Course {
   return course;
 }
 
-export function homeFeed(): HomeFeed {
+export async function homeFeed(): Promise<HomeFeed> {
   const pick = (sort: CatalogQuery['sort']) =>
-    queryCatalog({ sort, pageSize: 10 }).items;
-  const newest = pick('newest');
+    queryCatalog({ sort, pageSize: 10 }).then((p) => p.items);
+  const [newest, trending, popular] = await Promise.all([
+    pick('newest'),
+    pick('trending'),
+    pick('popular'),
+  ]);
   return {
     continueLearning: [],
-    recommended: pick('trending'),
-    popular: pick('popular'),
+    recommended: trending,
+    popular,
     newest,
-    trending: pick('trending'),
+    trending,
     recentlyPublished: newest,
   };
 }
