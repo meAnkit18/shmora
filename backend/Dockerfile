@@ -8,7 +8,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 # Dependencies first for better layer caching.
 COPY backend/package.json backend/package-lock.json ./backend/
-RUN cd backend && npm ci
+RUN npm install -g npm@11 && cd backend && npm ci
 # Source. `shared/` is bundled in by esbuild (resolves the .js imports to .ts).
 COPY shared ./shared
 COPY backend ./backend
@@ -19,7 +19,7 @@ FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm install -g npm@11 && npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/backend/dist ./dist
 EXPOSE 3001
 # node:alpine ships busybox wget; hit the existing /health route.
