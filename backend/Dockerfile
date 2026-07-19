@@ -25,4 +25,5 @@ EXPOSE 3001
 # node:alpine ships busybox wget; hit the existing /health route.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:3001/health || exit 1
+ENV NODE_OPTIONS=--openssl-legacy-provider
 CMD ["node", "dist/index.js"]
